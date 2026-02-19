@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["phiplot*"]
+
+[project]
+name = "phiplot"
+version = "0.1.0"
+readme = "README.md"
+description = "Web-based, interactive Exploratory Data Analysis environment designed to explore data about atmospherically relevant molecules"
+authors = [
+  {name = "Loukojärvi Matias", email = "matias.loukojarvi@helsinki.fi"},
+]
+maintainers = [
+  {name = "Loukojärvi Matias", email = "matias.loukojarvi@helsinki.fi"}
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+keywords = ["atmospheric-science", "chemistry", "eda", "interactive-plotting", "molecular-data"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Intended Audience :: Science/Research",
+]
+requires-python = ">=3.12"
+dependencies = [
+    "bokeh",
+    "dash",
+    "python-dotenv",
+    "holoviews",
+    "jax",
+    "matplotlib",
+    "numpy",
+    "panel",
+    "pandas",
+    "plotly",
+    "pymongo",
+    "rdkit",
+    "scikit-learn",
+    "scipy",
+    "psutil>=7.0.0",
+    "flax>=0.12.0",
+    "distrax>=0.1.7",
+    "datashader>=0.18.2",
+    "statsmodels>=0.14.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/edahelsinki/phiplot"
+Repository = "https://github.com/edahelsinki/phiplot.git"
+Issues = "https://github.com/edahelsinki/phiplot/issues"
+Demo = "https://phiplot-vilma-mongodb.2.rahtiapp.fi/"
+
+[project.scripts]
+phiplot = "app.main:main"

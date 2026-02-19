@@ -1,0 +1,17 @@
+<div>
+    <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+            <tr><th>Score</th><th>Value</th></tr>
+        </thead>
+        <tbody>
+        {% for metric, value, bg_color, font_color in metrics %}
+            <tr>
+                <td>{{ metric }}</td>
+                <td style="background-color: {{ bg_color }}; color: {{ font_color }}; text-align: right;">
+                    {{ "%.3f"|format(value) }}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>

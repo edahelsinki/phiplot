@@ -1,0 +1,147 @@
+{
+    "ATMOMACCS": {
+        "docs": "atmomaccs_fingerprint",
+        "params": {
+            "bit_width": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 6
+            },
+            "version": {
+                "dtype": "int",
+                "restrictions": [1, 4],
+                "default": 4
+            }
+        }
+    },
+    "Morgan": {
+        "docs": "morgan_fingerprint",
+        "params": {
+            "radius": {
+                "dtype": "int",
+                "restrictions": [0, null],
+                "default": 2
+            },
+            "fpSize": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 2048
+            },
+            "includeChirality": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": false
+            },
+            "useBondTypes": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": true
+            },
+            "useCounts": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": false
+            },
+            "onlyNonzeroInvariants": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": false
+            },
+            "includeRingMembership": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": true
+            },
+            "includeRedundantEnvironments": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": false
+            },
+            "useFeatures": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": false
+            },
+            "countSimulation": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": false
+            }
+  }
+    },
+    "RDKit": {
+        "docs": "rdkit_fingerprint",
+        "params": {
+            "minPath": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 1
+            },
+            "maxPath": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 7
+            },
+            "useHs": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": true
+            },
+            "branchedPaths": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": true
+            },
+            "useBondOrder": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": true
+            },
+            "countSimulation": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": false
+            },
+            "fpSize": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 2048
+            },
+            "numBitsPerFeature": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 2
+            }
+        }
+    },
+    "TopologicalTorsions": {
+        "docs": "topological_torsions_fingerprint",
+        "params": {
+            "includeChirality": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": false
+            },
+            "torsionAtomCount": {
+                "dtype": "int",
+                "restrictions": [2, null],
+                "default": 4
+            },
+            "countSimulation": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": true
+            },
+            "fpSize": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 2048
+                },
+            "ownsAtomInvGen": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": false
+            }
+        }
+    }
+}

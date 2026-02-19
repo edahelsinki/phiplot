@@ -1,0 +1,40 @@
+<div style="
+    display: flex; 
+    flex-wrap: nowrap;
+    align-items: center;
+    max-width: 550px; 
+    gap: 10px; 
+    border: 1px solid #ccc; 
+    padding: 10px; 
+    border-radius: 5px;
+">
+    <!-- Column 1: Image -->
+    <div style="
+        flex: 0 0 auto; 
+        max-width: 200px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    ">
+        <img 
+            src="@img" 
+            alt="Molecule image" 
+            style="max-width: 100%; height: auto; border: 1px solid #ccc;"
+        >
+    </div>
+
+    <!-- Column 2: Data Fields -->
+    <div style="
+        flex: 1 1 200px; 
+        max_width: 200px;
+        padding-right: 5px
+    ">
+    {% for col, props in properties.items() %}
+    <div style="{{ props.styles }}">
+        <b>{{ props.title }}</b>: {{ col }}
+    </div>
+    {% endfor %}
+    <div style="font-size: 12px; color: #b90000;">
+        <b>Coordinates</b>: (@x, @y)
+    </div>
+</div>

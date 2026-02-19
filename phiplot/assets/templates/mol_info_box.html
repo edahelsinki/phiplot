@@ -1,0 +1,36 @@
+<div style="
+    display: flex; 
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 10px; 
+    border: 1px solid #ccc; 
+    padding: 10px; 
+    border-radius: 5px;
+">
+
+    <!-- Column 1: Image -->
+    <div style="
+        flex: 0 0 auto; 
+        max-width: 200px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    ">
+        <img 
+            src="{{ img_path }}" 
+            alt="Molecule image" 
+            style="max-width: 100%; height: auto; border: 1px solid #ccc;"
+        >
+    </div>
+
+    <!-- Column 2: Data Fields -->
+    <div style="
+        flex: 1 1 300px; 
+    ">
+        {% for field, val in doc.items() %}
+        <div>
+            <b>{{ field }}</b>: {{ val }}
+        </div>
+        {% endfor %}
+    </div>
+</div>

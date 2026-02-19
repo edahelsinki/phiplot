@@ -1,0 +1,49 @@
+services:
+  mongodb:
+    image: mongo:latest
+    profiles: ["local-db"]
+    container_name: localdb_service
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./gecko/geckoq.molecules.json:/geckoq.molecules.json
+      - ./gecko/geckoap.molecules.json:/geckoap.molecules.json
+  db_importer:
+    image: mongo:latest
+    profiles: ["local-db"]
+    depends_on:
+      - mongodb
+    volumes:
+      - ./gecko/geckoq.molecules.json:/geckoq.molecules.json
+      - ./gecko/geckoap.molecules.json:/geckoap.molecules.json
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Waiting for mongodb...' &&
+      sleep 5 &&
+      echo 'Importing GeckoQ...' &&
+      mongoimport --host mongodb --db GeckoQ --collection molecules --file /geckoq.molecules.json --jsonArray &&
+      echo 'Importing GeckoAP...' &&
+      mongoimport --host mongodb --db GeckoAP --collection molecules --file /geckoap.molecules.json --jsonArray
+      "
+  app-local:
+    build: .
+    profiles: ["local-db"]
+    container_name: phiplot_local
+    ports:
+      - "5006:5006"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/
+    depends_on:
+      - mongodb
+    command: ["uv", "run", "-m", "phiplot.main", "--port=5006", "--address=0.0.0.0", "--localdb"]
+
+  app:
+    build: .
+    container_name: phiplot_remote
+    ports:
+      - "5006:5006"
+    command: ["uv", "run", "-m", "phiplot.main", "--port=5006", "--address=0.0.0.0"]
+
+volumes:
+  mongo_data:

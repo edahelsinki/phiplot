@@ -1,0 +1,25 @@
+{
+    "cKPCA": {
+        "docs": "ckpca_embedding",
+        "params": {
+            "kernel": {
+                "dtype": "str",
+                "restrictions": [
+                    "Linear",
+                    "Polynomial",
+                    "RBF",
+                    "Tanimoto",
+                    "Manhattan",
+                    "Cosine",
+                    "Dice",
+                    "Hamming"
+                ],
+                "default": "Linear"
+            }
+        }
+    },
+    "LSP": {
+        "docs": "lsp_embedding",
+        "params": {}
+    }
+}

@@ -1,0 +1,68 @@
+{
+    "Cosine": {
+        "docs": "cosine_kernel",
+        "params": {}
+    },
+    "Dice": {
+        "docs": "dice_kernel",
+        "params": {}
+    },
+    "Hamming": {
+        "docs": "hamming_kernel",
+        "params": {
+            "gamma": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 1.0
+            }
+        }
+    },
+    "Linear": {
+        "docs": "linear_kernel",
+        "params": {}
+    },
+    "Manhattan": {
+        "docs": "manhattan_kernel",
+        "params": {
+            "gamma": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 1.0
+            }
+        }
+    },
+    "Polynomial": {
+        "docs": "polynomial_kernel",
+        "params": {
+            "degree": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 2
+            },
+            "coef0": {
+                "dtype": "float",
+                "restrictions": null,
+                "default": 1.0
+            },
+            "gamma": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 1.0
+            }
+        }
+    },
+    "RBF": {
+        "docs": "rbf_kernel",
+        "params": {
+           "gamma": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 1.0
+            }
+        }
+    },
+    "Tanimoto": {
+        "docs": "tanimoto_kernel",
+        "params": {}
+    }
+}

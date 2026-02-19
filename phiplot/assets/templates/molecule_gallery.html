@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    .grid-container {
+      display: grid;
+      grid-template-columns: repeat({{ side }}, 1fr);
+      gap: 8px;
+    }
+    .grid-item {
+      text-align: center;
+      font-family: sans-serif;
+      font-size: 12px;
+    }
+    .grid-item img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 0 auto 4px auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="grid-container">
+    {% for i in range(n) %}
+      {% set img = images[i] %}
+      <div class="grid-item">
+        <img src="{{ img.url }}" alt="{{ img.title }}">
+        <div>{{ img.title }}</div>
+      </div>
+    {% endfor %}
+    {% for _ in range(side*side - n) %}
+      <div class="grid-item"></div>
+    {% endfor %}
+  </div>
+</body>
+</html>

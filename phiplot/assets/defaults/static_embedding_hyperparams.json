@@ -1,0 +1,326 @@
+{
+    "PCA": {
+        "docs": "pca_embedding",
+        "params": {
+            "whiten": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": false
+            },
+            "svd_solver": {
+                "dtype": "str",
+                "restrictions": [
+                    "auto",
+                    "full",
+                    "covariance_eigh",
+                    "arpack",
+                    "randomized"
+                ],
+                "default": "auto"
+            },
+            "tol": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 0.0
+            },
+            "iterated_power": {
+                "dtype": "auto_int",
+                "restrictions": [0, null],
+                "default": "auto"
+            },
+            "n_oversamples": {
+                "dtype": "int",
+                "restrictions": [0, null],
+                "default": 10
+            },
+            "power_iteration_normalizer": {
+                "dtype": "str",
+                "restrictions": [
+                    "auto",
+                    "QR",
+                    "LU",
+                    "none"
+                ],
+                "default": "auto"
+            }
+        }
+    },
+    "ICA": {
+        "docs": "ica_embedding",
+        "params": {
+            "algorithm": {
+                "dtype": "str",
+                "restrictions": [
+                    "parallel",
+                    "deflation"
+                ],
+                "default": "parallel"
+            },
+            "whiten": {
+                "dtype": "bool_str",
+                "restrictions": [
+                    "arbitrary-variance",
+                    "unit-variance",
+                    false
+                ],
+                "default": "unit-variance"
+            },
+            "fun": {
+                "dtype": "str",
+                "restrictions": [
+                    "logcosh",
+                    "exp",
+                    "cube"
+                ],
+                "default": "log_cosh"
+            },
+            "max_iter": {
+                "dtype": "int",
+                "restrictions": [0, null],
+                "default": 200
+            },
+            "tol": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 0.0001
+            },
+            "whiten_solver": {
+                "dtype": "str",
+                "restrictions": [
+                    "eigh",
+                    "svd"
+                ],
+                "default": "svd"
+            }
+        }
+    },
+    "KPCA": {
+        "docs": "kpca_embedding",
+        "params": {
+            "kernel": {
+                "dtype": "str",
+                "restrictions": [
+                    "linear",
+                    "poly",
+                    "rbf",
+                    "sigmoid",
+                    "cosine"
+                ],
+                "default": "linear"
+            },
+            "gamma": {
+                "dtype": "float_none",
+                "restrictions": [0, null],
+                "default": null
+            },
+            "degree": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 3
+            },
+            "coef0": {
+                "dtype": "float",
+                "restrictions": null,
+                "default": 1
+            },
+            "alpha": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 1.0
+            },
+            "fit_inverse_transform": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": false
+            },
+            "eigen_solver": {
+                "dtype": "str",
+                "restrictions": [
+                    "auto",
+                    "dense",
+                    "arpack",
+                    "randomized"
+                ],
+                "default": "auto"
+            },
+            "tol": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 0
+            },
+            "max_iter": {"dtype": "int_none",
+                "restrictions": [0, null],
+                "default": null
+            },
+            "iterated_power": {
+                "dtype": "auto_int",
+                "restrictions": [0, null],
+                "default": "auto"
+            },
+            "remove_zero_eig": {
+                "dtype": "bool",
+                "restrictions": null,
+                "default": false
+            }
+        }
+    },
+    "LLE": {
+        "docs": "lle_embedding",
+        "params": {
+            "n_neighbors": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 5
+            },
+            "reg": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 0.001
+            },
+            "eigen_solver": {
+                "dtype": "str",
+                "restrictions": [
+                    "auto",
+                    "arpack",
+                    "dense"
+                ],
+                "default": "auto"
+            },
+            "tol": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 1e-06
+            },
+            "max_iter": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 100
+            },
+            "method": {
+                "dtype": "str",
+                "restrictions": [
+                    "standard",
+                    "hessian",
+                    "modified",
+                    "ltsa"
+                ],
+                "default": "standard"
+            },
+            "hessian_tol": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 0.0001
+            },
+            "modified_tol": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 1e-12
+            },
+            "neighbors_algorithm": {
+                "dtype": "str",
+                "restrictions": [
+                    "auto",
+                    "brute",
+                    "kd_tree",
+                    "ball_tree"
+                ],
+                "default": "auto"
+            }
+        }
+    },
+    "MDS": {
+        "docs": "mds_embedding",
+        "params": {
+            "metric": {
+                "dtype": "str",
+                "restrictions": null,
+                "default": "euclidean"
+            },
+            "n_init": {
+                "dtype": "int_str",
+                "restrictions": [1, null],
+                "default": "warn"
+            },
+            "max_iter": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 300
+            },
+            "eps": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 1e-06
+            },
+            "normalized_stress": {
+                "dtype": "bool_str",
+                "restrictions": [
+                    true,
+                    false,
+                    "auto"
+                ],
+                "default": "auto"
+            }
+        }
+    },
+    "tSNE": {
+        "docs": "tsne_embedding",
+        "params": {
+            "perplexity": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 30.0
+            },
+            "early_exaggeration": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 12.0
+            },
+            "learning_rate": {
+                "dtype": "auto_float",
+                "restrictions": [0, null],
+                "default": "auto"
+            },
+            "max_iter": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 1000
+            },
+            "n_iter_without_progress": {
+                "dtype": "int",
+                "restrictions": [0, null],
+                "default": 300
+            },
+            "min_grad_norm": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 1e-07
+            },
+            "metric": {
+                "dtype": "str",
+                "restrictions": null,
+                "default": "euclidean"
+            },
+            "init": {
+                "dtype": "str",
+                "restrictions": [
+                    "random",
+                    "pca"
+                ],
+                "default": "pca"
+            },
+            "method": {
+                "dtype": "str",
+                "restrictions": [
+                    "barnes_hut",
+                    "exact"
+                ],
+                "default": "barnes_hut"
+            },
+            "angle": {
+                "dtype": "float",
+                "restrictions": [0, 1],
+                "default": 0.5
+            }
+        }
+    }
+}

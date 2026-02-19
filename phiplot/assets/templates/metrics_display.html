@@ -1,0 +1,33 @@
+<div>
+    <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+            <tr><th>Metric</th><th>Value</th></tr>
+        </thead>
+        <tbody>
+        {% for metric, value, bg_color, font_color in metrics %}
+            <tr>
+                <td>{{ metric }}</td>
+                <td style="background-color: {{ bg_color }}; color: {{ font_color }}; text-align: right;">
+                    {{ "%.3f"|format(value) }}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <div style="margin-top: 10px;">
+        <strong>Color legend:</strong>
+        <div style="display: flex; flex-wrap: wrap; margin-top: 5px;">
+            {% for color, label in legend %}
+            <div style="display: flex; align-items: center; margin-right: 10px;">
+                <div style="width: 15px; height: 15px; background-color: {{ color }}; margin-right: 5px;"></div>
+                <span style="font-size: 12px;">{{ label }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div style="margin-top: 10px; font-style: italic;">
+        Computed with {{distance_measure}} distance
+    </div>
+</div>
