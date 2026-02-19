@@ -1,7 +1,7 @@
 services:
   mongodb:
     image: mongo:latest
-    profiles: ["local-db"]
+    profiles: ["local"]
     container_name: localdb_service
     ports:
       - "27017:27017"
@@ -11,7 +11,7 @@ services:
       - ./gecko/geckoap.molecules.json:/geckoap.molecules.json
   db_importer:
     image: mongo:latest
-    profiles: ["local-db"]
+    profiles: ["local"]
     depends_on:
       - mongodb
     volumes:
@@ -28,22 +28,25 @@ services:
       "
   app-local:
     build: .
-    profiles: ["local-db"]
+    profiles: ["local"]
     container_name: phiplot_local
     ports:
       - "5006:5006"
     environment:
       - MONGO_URI=mongodb://mongodb:27017/
+      - UV_NO_PROJECT=1
     depends_on:
       - mongodb
-    command: ["uv", "run", "-m", "phiplot.main", "--port=5006", "--address=0.0.0.0", "--localdb"]
-
-  app:
+    command: ["uv", "run", "python", "-m", "phiplot.main", "--port=5006", "--address=0.0.0.0", "--localdb"]
+  app-remote:
     build: .
+    profiles: ["remote"]
     container_name: phiplot_remote
     ports:
       - "5006:5006"
-    command: ["uv", "run", "-m", "phiplot.main", "--port=5006", "--address=0.0.0.0"]
+    environment:
+      - UV_NO_PROJECT=1
+    command: ["uv", "run", "python", "-m", "phiplot.main", "--port=5006", "--address=0.0.0.0"]
 
 volumes:
   mongo_data:

@@ -27,10 +27,16 @@ docker compose version
 Ensure ports `5006` (used by the web app) and `27017` (used by the database) are free on your machine before running. To build the application accompanied by a local database instance (using sample data from the `./gecko` directory), run:
 
 ```bash
-docker compose --profile local-db up --build
+docker compose --profile local up --build
 ```
 
 Access the app at <http://localhost:5006/>.
+
+To shut down all services and clean up containers, run:
+
+```bash
+docker compose --profile local down
+```
 
 > 💡 This command automatically initialises a local MongoDB instance, imports the molecule datasets, and launches the application. The local database instance created contains a subset of the full data. If you want the local application to access the full data, follow the instructions below.
 
@@ -43,20 +49,18 @@ The full dataset is available via a remote database instance. To use this:
 4. Launch: Run the standard compose command:
 
 ```bash
-docker compose up --build
+docker compose --profile remote up --build
 ```
 
 Access the app at <http://localhost:5006/>.
 
-> 💡 In this mode, the local database container will not start and the application will target the remote URI instead. 
-
-### Stopping the application
-
 To shut down all services and clean up containers, run:
 
 ```bash
-docker compose --profile local-db down
+docker compose --profile remote down
 ```
+
+> 💡 In this mode, the local database container will not start and the application will target the remote URI instead. 
 
 ## References
 

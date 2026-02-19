@@ -11,3 +11,4 @@ manifests
 .vscode/
 *.tmp
 **/mol_structures/
+.uv_cache/

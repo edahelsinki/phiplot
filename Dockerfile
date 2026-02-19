@@ -9,17 +9,19 @@ RUN apt-get update && apt-get install -y \
 # Use a clean working directory
 WORKDIR /phiplot
 
-# Copy only dependency files first
+# Install dependencies ONLY
 COPY pyproject.toml uv.lock* ./
+RUN uv sync --frozen --no-cache --no-install-project
 
 # Copy the application source code and README file
 COPY ./phiplot ./phiplot
-COPY pyproject.toml uv.lock* README.md ./
+COPY README.md ./
 
-# Install dependencies according to the lockfile
-RUN uv sync --locked --no-cache --no-install-project \
-    && chgrp -R 0 /phiplot \
-    && chmod -R g+rwx /phiplot
+# Add permissions
+RUN chgrp -R 0 /phiplot && chmod -R g+rwx /phiplot
+
+# Bypass runtime project metadata checks
+ENV UV_NO_PROJECT=1
 
 # Create a writable directory for Matplotlib config to avoid permission errors inside the container
 RUN mkdir -p /tmp/matplotlib_config \
@@ -31,4 +33,4 @@ ENV MPLCONFIGDIR=/tmp/matplotlib_config
 EXPOSE 5006
 
 # Launch the application
-CMD ["uv", "--no-cache", "run", "-m", "phiplot.main", "--port=5006", "--address=0.0.0.0"]
+CMD ["uv", "run", "python", "-m", "phiplot.main", "--port=5006", "--address=0.0.0.0"]
