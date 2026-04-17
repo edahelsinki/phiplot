@@ -80,4 +80,4 @@ docker compose --profile remote down
 
 [6] Oglic, D., Paurat, D., & Gärtner, T. (2014). *Interactive knowledge-based kernel PCA*. In T. Calders, F. Esposito, E. Hüllermeier, & R. Meo (Eds.), *Machine learning and knowledge discovery in databases* (pp. 501–516). Springer. https://doi.org/10.1007/978-3-662-44851-9_32  
 
-[7] Lind, L., Sandström, H., & Rinke, P. (2025). *An interpretable molecular descriptor for machine learning predictions in atmospheric science*. *arXiv preprint* arXiv:2510.20465. https://arxiv.org/abs/2510.20465
+[7] Lind, L., Sandström, H., & Rinke, P. (2026). *An interpretable molecular descriptor for machine learning predictions in atmospheric science*. *The Journal of Chemical Physics*, 164(8), Article 084115. https://doi.org/10.1063/5.0308548
