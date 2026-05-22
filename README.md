@@ -1,4 +1,4 @@
-<img src="./banner.png" alt="drawing" width="350"/>
+<img src="./phiplot/assets/media/banner.png" alt="drawing" width="350"/>
 
 # PhiPlot
 
