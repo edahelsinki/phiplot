@@ -72,6 +72,7 @@ class EmbeddingMenu(BaseMenu):
         self.callbacks = callbacks
 
         self._algo = "PCA"
+        self._fingerprint = None
         self._prev_fingerprint = None
         self._mpds = dict()
 
@@ -161,6 +162,11 @@ class EmbeddingMenu(BaseMenu):
         )
         self._widgets["embed_button"].on_click(self._on_embed)
 
+        self._widgets["compute_metrics_toggle"] = pn.widgets.Checkbox(
+            name="Compute metrics",
+            value=True
+        )
+
     def _on_fingerprint_selection(self, event=None) -> None:
         """
         Apply the selected fingerprint to the data handler.
@@ -184,6 +190,7 @@ class EmbeddingMenu(BaseMenu):
         window.contents = [
             emb_params_section,
             self._widgets["fingerprint_selector"],
+            self._widgets["compute_metrics_toggle"],
             pn.Spacer(height=self._styling.default_spacer_height),
             pn.Row(
                 self._widgets["embed_button"],
@@ -263,6 +270,10 @@ class EmbeddingMenu(BaseMenu):
         self._floating_panels[identifyer].open()
 
     def _on_embed(self, event=None):
-        self._embedding_data_handler.fingerprint = self._widgets["fingerprint_selector"].value
+        fp = self._widgets["fingerprint_selector"].value
+        self._embedding_data_handler.fingerprint = fp
         self._algo = self._clicked_algo
-        self._parent_view.embed()
+        compute_metrics = self._widgets["compute_metrics_toggle"].value
+        self._parent_view.embed(
+            compute_metrics = compute_metrics
+        )

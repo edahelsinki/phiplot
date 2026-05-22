@@ -35,12 +35,12 @@ class Styling:
     default_spacer_height: int = 10
 
     default_plot_colors: dict = field(default_factory = lambda: dict(
-        palette = "CET_D9",
+        palette = "isolum",
         fill = "#8b8b8b",
-        control_point = "#FF00FF",
-        added_point = "#FF5F1F",
-        must_link = "#0FFF50",
-        cannot_link = "#FF3131"
+        control_point = "#9B59B6",
+        added_point = "#48FF1F",
+        must_link = "#4682B4",
+        cannot_link = "#D35400"
     ))
 
     default_button_style: dict = field(default_factory = lambda: dict(

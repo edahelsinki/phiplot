@@ -30,7 +30,7 @@ class EmbeddingDataHandler:
         self._tooltip_columns: list[str] | None = None
 
     @property
-    def algortim(self) -> str | None:
+    def algorithm(self) -> str | None:
         return self._embedding_handler.algorithm
 
     @property
@@ -127,6 +127,7 @@ class EmbeddingDataHandler:
         try:
             # Create DataFrame from embedding coordinates and join with existing data
             df = pd.DataFrame(self._embedding_handler.embedding)
+
             df = df.join(self._data_handler.data)
             n = len(df)
 

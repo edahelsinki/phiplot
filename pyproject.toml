@@ -47,6 +47,11 @@ dependencies = [
     "distrax>=0.1.7",
     "datashader>=0.18.2",
     "statsmodels>=0.14.6",
+    "kmodes>=0.12.2",
+    "pytest>=9.0.3",
+    "bitbirch",
+    "scikit-learn-intelex>=2026.0.0",
+    "umap-learn>=0.5.12",
 ]
 
 [project.urls]
@@ -57,3 +62,14 @@ Demo = "https://phiplot-vilma-mongodb.2.rahtiapp.fi/"
 
 [project.scripts]
 phiplot = "app.main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv]
+override-dependencies = [
+    "numpy>=1.20"
+]
+
+[tool.uv.sources]
+bitbirch = { git = "https://github.com/mqcomplab/bitbirch.git" }

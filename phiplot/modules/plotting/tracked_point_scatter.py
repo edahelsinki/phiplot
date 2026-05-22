@@ -73,8 +73,8 @@ class TrackedPointScatter:
 
         self._colors = colors
         self._default_point_size = 25
-        self._default_line_width = 5
-        self._fade_fraction = 0.1
+        self._default_line_width = 8
+        self._fade_fraction = 0.075
 
         self._styles = self._resolve_kwargs(kwargs)
 
@@ -122,7 +122,7 @@ class TrackedPointScatter:
         """
 
         self.constraint_tracker = ConstraintTracker(
-            self._source, self._bokeh_plot, data_handler, embedding_handler
+            self, self._source, self._bokeh_plot, embedding_handler
         )
 
     def get_object(self) -> hv.Points:
@@ -177,7 +177,7 @@ class TrackedPointScatter:
 
         filtered_set = set(filtered_indices)
         self._source.data["fill_alpha"] = [
-            self._fade_fraction if i in filtered_set else 1.0
+            self._fade_fraction if i in filtered_set else 0.75
             for i in range(len(self._data))
         ]
 
@@ -192,6 +192,16 @@ class TrackedPointScatter:
 
         glyph = plot.handles["glyph"]
         plot_handle = plot.state
+
+        renderer = plot.handles.get("glyph_renderer")
+        if renderer:
+            renderer.nonselection_glyph = None
+            sel_glyph = glyph.clone()
+            sel_glyph.line_color = "cyan"
+            sel_glyph.line_width = self._styles["line_width"]
+            sel_glyph.line_alpha = 1.0  
+            sel_glyph.size = self._styles["size"] * 1.2
+            renderer.selection_glyph = sel_glyph
 
         glyph.line_color = {"field": "line_color"}
         glyph.fill_alpha = {"field": "fill_alpha"}
@@ -241,6 +251,7 @@ class TrackedPointScatter:
                         formatter=PrintfTickFormatter(format="%.3g"),
                         location=(0, 0),
                         title=self._color_feature,
+                        title_text_font_size="1.25em"
                     )
                     plot_handle.add_layout(color_bar, "right")
                 else:

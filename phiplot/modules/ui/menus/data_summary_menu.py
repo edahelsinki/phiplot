@@ -5,6 +5,7 @@ import panel as pn
 from .base_menu import BaseMenu
 from phiplot.modules.ui.floating import *
 from phiplot.modules.ui.utils import *
+from phiplot.modules.ui.widgets.success_spinner import SuccessSpinner
 
 if TYPE_CHECKING:
     from phiplot.modules.ui.views.data_summary_view import DataSummaryView
@@ -26,16 +27,19 @@ class DataSummaryMenu(BaseMenu):
         self._floating_panels = dict(
            numerical_summary_panel = self._build_numerical_summary_panel(),
            categorical_summary_panel = self._build_categorical_summary_panel(),
+           filter_outliers_panel = self._build_filter_outliers_panel()
         )
 
         self.menu_items = [
             ("Numerical Field Summary", "numerical_summary"),
             ("Categorical Field Summary", "categorical_summary"),
+            ("Filter Outliers", "filter_outliers"),
         ]
 
         self.callbacks = dict(
             numerical_summary = lambda: self._open_numerical_summary(),
-            categorical_summary = lambda: self._open_categorical_summary()
+            categorical_summary = lambda: self._open_categorical_summary(),
+            filter_outliers = lambda: self._floating_panels["filter_outliers_panel"].open(),
         )
 
     def update_fields(self) -> None:
@@ -43,6 +47,7 @@ class DataSummaryMenu(BaseMenu):
         self._widgets["numerical_field_selector"].options = self._summarizable_fields["Numerical"]
         self._widgets["categorical_field_selector"].options = self._summarizable_fields["Categorical"]
         self._widgets["comparison_field_selector"].options = self._summarizable_fields["Numerical"]
+        self._widgets["outlier_field_selector"].options = self._summarizable_fields["Numerical"]
 
     def _construct_widgets(self) -> None:
         """
@@ -80,16 +85,32 @@ class DataSummaryMenu(BaseMenu):
         )
 
         self._widgets["include_kde_toggle"] = pn.widgets.Checkbox(
-            name="Include KDE", 
+            name="Include KDE (applies only to equal width bins)", 
             value=True
         )
 
-        self._widgets["self.n_buckets_int"] = pn.widgets.IntInput(
+        self._widgets["n_buckets_int"] = pn.widgets.IntInput(
             name="Number of Buckets",
             value=30,
             step=1,
             start=1,
             sizing_mode="stretch_width"
+        )
+
+        self._widgets["bin_type_selector"] = pn.widgets.Select(
+            name="Binning type",
+            options=["Equal width", "Equal height"],
+            sizing_mode="stretch_width"
+        )
+
+        self._widgets["x_axis_log_toggle"] = pn.widgets.Checkbox(
+            name="Use log-scale on data values",
+            value=False
+        )
+
+        self._widgets["y_axis_log_toggle"] = pn.widgets.Checkbox(
+            name="Use log-scale on count values",
+            value=False
         )
 
         self._widgets["summarize_button"] = pn.widgets.Button(
@@ -98,7 +119,7 @@ class DataSummaryMenu(BaseMenu):
         )
         self._widgets["summarize_button"].on_click(lambda event: self._summarize())
 
-        self._widgets["summarize_spinner"] = pn.indicators.LoadingSpinner(
+        self._widgets["summarize_spinner"] = SuccessSpinner(
             value=False, **self._styling.default_spinner_style
         )
         
@@ -106,10 +127,13 @@ class DataSummaryMenu(BaseMenu):
         window = WindowPanel("Numerical Field Summary", self._window_destination)
         window.contents = [
             self._widgets["numerical_field_selector"],
-            self._widgets["self.n_buckets_int"],
+            self._widgets["n_buckets_int"],
+            self._widgets["bin_type_selector"],
             self._widgets["filter_toggle"] ,
             self._widgets["relative_freq_toggle"],
             self._widgets["include_kde_toggle"],
+            self._widgets["x_axis_log_toggle"],
+            self._widgets["y_axis_log_toggle"],
             pn.Spacer(height=self._styling.default_spacer_height),
             pn.Row(
                 self._widgets["summarize_button"],
@@ -134,6 +158,40 @@ class DataSummaryMenu(BaseMenu):
         ]
         return window
     
+    def _build_filter_outliers_panel(self) -> WindowPanel:
+        self._widgets["outlier_field_selector"] = pn.widgets.Select(
+            name="Field to filter",
+            sizing_mode="stretch_width"
+        )
+
+        self._widgets["outlier_strategy_selector"] = pn.widgets.Select(
+            name="Outlier strategy",
+            options=["Linear IQR", "Log IQR"],
+            sizing_mode="stretch_width"
+        )
+
+        self._widgets["filter_outliers_button"] = pn.widgets.Button(
+            name="Filter Outliers",
+            **self._styling.default_button_style
+        )
+        self._widgets["filter_outliers_button"].on_click(lambda event: self._filter_outliers())
+
+        self._widgets["filter_outliers_spinner"] = SuccessSpinner(
+            value=False, **self._styling.default_spinner_style
+        )
+
+        window = WindowPanel("Filter Outliers", self._window_destination)
+        window.contents = [
+            self._widgets["outlier_field_selector"],
+            self._widgets["outlier_strategy_selector"],
+            pn.Spacer(height=self._styling.default_spacer_height),
+            pn.Row(
+                self._widgets["filter_outliers_button"],
+                self._widgets["filter_outliers_spinner"]
+            )
+        ]
+        return window
+    
     def _open_numerical_summary(self) -> None:
         self._summary_type = "numerical"
         self._floating_panels["numerical_summary_panel"].open()
@@ -148,9 +206,12 @@ class DataSummaryMenu(BaseMenu):
                 self._parent_view.summarize_numerical(
                     field = self._widgets["numerical_field_selector"].value,
                     use_filters = self._widgets["filter_toggle"].value,
-                    n_buckets = self._widgets["self.n_buckets_int"].value,
+                    n_buckets = self._widgets["n_buckets_int"].value,
+                    binning_type = self._widgets["bin_type_selector"].value.replace(" ", "_").lower(),
                     use_relative_freq = self._widgets["relative_freq_toggle"].value,
-                    include_KDE = self._widgets["include_kde_toggle"].value
+                    include_KDE = self._widgets["include_kde_toggle"].value,
+                    xlog = self._widgets["x_axis_log_toggle"].value,
+                    ylog = self._widgets["y_axis_log_toggle"].value
                 )
             elif self._summary_type == "categorical":
                 self._parent_view.summarize_categorical(
@@ -162,6 +223,7 @@ class DataSummaryMenu(BaseMenu):
                 )
             else:
                 logger.error("Invalid summary type.")
+        pn.state.notifications.success("Summary ready!")
 
     def _get_summarizable_fields(self) -> dict[str, list]:
         """
@@ -187,3 +249,10 @@ class DataSummaryMenu(BaseMenu):
                     result["Numerical"].append(col)
         
         return result
+    
+    def _filter_outliers(self):
+        with toggle_spinner(self._widgets["filter_outliers_spinner"]):
+            field = self._widgets["outlier_field_selector"].value
+            strategy = self._widgets["outlier_strategy_selector"].value.lower().replace(" ", "_")
+            self._parent_view._filter_outliers(field, strategy)
+        pn.state.notifications.success("Outlier filter applied!")

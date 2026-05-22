@@ -12,6 +12,7 @@ from rdkit import Chem, RDLogger
 from .molecule_handler import MoleculeHandler
 from .embedding_data_handler import EmbeddingDataHandler
 from .clustering_data_handler import ClusteringDataHandler
+from phiplot import ROOT
 from phiplot.modules.data.db.client import DBClient
 from phiplot.modules.ui.widgets import *
 from phiplot.modules.ui.utils import *
@@ -21,7 +22,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-
 class DataHandler:
     """
     Manages data retrieval, preprocessing, filtering, and integration with embedding visualizations.
@@ -29,85 +29,160 @@ class DataHandler:
     Acts as the central interface for managing data flow between the database,
     embedding handler, and visualization pipeline.
 
-    Args:
-        use_local_db (bool): Whether to use a local database connection.
-        embedding_handler (EmbeddingHandler): Embedding handler for managing
-            feature matrices and dimensionality reduction.
+    Attributes:
+        client_doc_cap (int | None): Maximum number of documents to fetch. None means no cap
+        supported_filter_types (list[str]): Types of filters allowed in the pipeline.
     """
 
+    client_doc_cap: int | None = 100000
+    supported_filter_types: list[str] = [
+            "range",
+            "equal_to_number",
+            "equal_to_categorical",
+            "list_of_values",
+            "less_than",
+            "greater_than"
+        ]
+
     def __init__(self, use_local_db: bool, embedding_handler: EmbeddingHandler) -> None:
+        """
+        Args:
+            use_local_db (bool): Whether to use a local database connection.
+            embedding_handler (EmbeddingHandler): Embedding handler for managing
+                feature matrices and dimensionality reduction.
+        """
+
         self._embedding_handler = embedding_handler
         self._molecule_handler = MoleculeHandler()
 
         self.embedding_data_handler = EmbeddingDataHandler(self, embedding_handler)
         self.clustering_data_handler = ClusteringDataHandler(self)
 
-        self._client_doc_cap = 100000
         self._client = DBClient(
-            use_local=use_local_db, document_cap=self._client_doc_cap
+            use_local=use_local_db, document_cap=self.client_doc_cap
         )
 
-        self._current_database = None
-        self._current_collection = None
+        # Database
+        self._database: str | None = None
+        self._collection: str | None = None
 
-        self._sample = None
-        self._data = None
+        # Data
+        self._sample: list[dict[str, Any]] | None = None
+        self._data : pd.DataFrame | None = None
+        self._fingerprints: pd.DataFrame | None = None
+        self._n_datapoints: int | None = None
 
-        self._columns = None
-        self._column_dtypes = None
-        self._index_column = None
-        self._smiles_column = None
-        self._smiles_like_cols = None
-        self._fetch_columns = None
-        self._cluster_label_column = "cluster_label"
-
-        self._filter_by_columns = []
-        self._generated_cols = []
-
-        self._added_indices = set()
-        self._filtered_indices = set()
-        self._filters = dict()
-
-        self.supported_filter_types = [
-            "range",
-            "equal_to_number",
-            "equal_to_categorical",
-            "less_than",
-            "greater_than",
-        ]
-
-        self.use_external_data = False
-        self.use_external_smiles = False
-        self.collection_set = False
-        self.data_initialized = False
-        self.plot_data_initialized = False
-        self.deleting_filter = False
-
+        # Columns
+        self._columns: list[str] | None = None
+        self._column_dtypes: dict[str, str] | None = None
+        self._data_columns: list[str] | None = None
+        self._index_column: str | None = None
+        self._smiles_column: str | None = None
+        self._smiles_like_cols: str | None = None
+        self._columns_to_fetch: list[str] | None = None
+        self._generated_cols: list[str] | None = None
         self._default_index_col = "index"
         self._default_smiles_col_like = "SMILES"
 
-        self._fingerprints: pd.DataFrame | None = None
-        self._n_datapoints: int = 0
+        # Indices
+        self._added_indices: set[str] = set()
+        self._filtered_indices: set[str] = set()
 
-    @property
-    def fingerprints(self) -> pd.DataFrame | None:
-        return self._fingerprints
+        # Filters
+        self._active_filters: dict[str, dict[str, Any]] = dict()
+        self._active_db_filters: dict[str, dict[str, Any]] = dict()
+
+        # Boolean flags
+        self._use_external_data = False
+        self._use_external_smiles = False
+        self._data_initialized = False
+        self._plot_data_initialized = False
+        self._deleting_filter = False
 
     @property
     def available_databases(self) -> list[str]:
         return list(self._client.available_collections.keys())
 
     @property
-    def client_doc_cap(self) -> int:
-        return self._client_doc_cap
+    def database(self):
+        return self._database
+    
+    @database.setter
+    def database(self, database_name: str) -> None:
+        available = self.available_databases
+        if database_name in available:
+            self._database = database_name
+        else:
+            logger.error(
+                f"Could find a database called '{database_name}'..."
+                f"Available databases include: {available}"
+            )
 
     @property
-    def cluster_label_column(self):
-        return self._cluster_label_column
+    def collection(self) -> str:
+        return self._collection
+    
+    @collection.setter
+    def collection(self, collection_name: str) -> None:
+        self._client.set_collection(self._database, collection_name)
+
+        if not self._client.is_connected:
+            logger.error(
+                "Could not connect to the collection {collection_name}..."
+            )
+            return
+
+        collection_fields = self._client.fields
+        self._columns = list(collection_fields.keys())
+        self._generated_cols = []
+        self._column_dtypes = collection_fields
+        self._collection = collection_name
+
+    @property
+    def data(self) -> pd.DataFrame:
+        if self._data is not None:
+            return self._data.copy()
+        return pd.DataFrame()
+
+    @property
+    def fingerprints(self) -> pd.DataFrame:
+        if self._fingerprints is not None:
+            return self._fingerprints.copy()
+        return pd.DataFrame()
+    
+    @property
+    def columns_to_fetch(self) -> list[str]:
+        if self._columns_to_fetch is not None:
+            return list(set(self._columns_to_fetch.copy()))
+        return []
+
+    @columns_to_fetch.setter
+    def columns_to_fetch(self, cols: list[str]) -> None:
+        valid = []
+        invalid = []
+
+        for col in cols:
+            if col not in self._columns:
+                invalid.append(col)
+            valid.append(col)
+
+        if len(valid) == 0:
+            logger.error(
+                "No valid columns to fetch were provided..."
+            )
+            return
+        
+        if len(invalid) > 0:
+            logger.warning(
+                f"The following columns to fetch are invalid and were skipped: {", ".join(invalid)}"
+            )
+
+        self._columns_to_fetch = valid
+        self._client.set_projection(include=valid)
 
     @property
     def columns(self) -> list[str]:
-        if self._columns:
+        if self._columns is not None:
             return list(set(self._columns.copy()))
         return []
     
@@ -118,62 +193,235 @@ class DataHandler:
         return {}
 
     @property
-    def data(self) -> pd.DataFrame | None:
-        if self._data is not None:
-            return self._data
-        return None
-    
-    @property
-    def clustering_data(self) -> pd.DataFrame | None:
-        if self._data is not None:
-            if self._cluster_label_column in self._columns:
-                return self._data.drop(self._cluster_label_column, axis=1)
-            else:
-                return self._data.copy()
-        return None
+    def active_filters(self) -> dict[str, dict[str, Any]]:
+        if self._active_filters is not None:
+            return self._active_filters.copy()
+        return {}
 
     @property
-    def fetch_columns(self) -> list[str]:
-        if self._fetch_columns:
-            return list(set(self._fetch_columns.copy()))
+    def active_db_filters(self) -> dict[str, dict[str, Any]]:
+        if self._active_filters is not None:
+            return self._db_filters.copy()
+        return {}
+
+    @property
+    def filtered_indices(self) -> list[str]:
+        if self._filtered_indices is not None:
+            return list(self._filtered_indices.copy())
         return []
 
-    @property
-    def db_data_filters(self) -> dict[str, dict]:
-        return self._db_data_filters.copy()
-
-    @property
-    def filters(self) -> dict[str, dict]:
-        return self._filters.copy()
-
-    @property
-    def filter_by_columns(self) -> list:
-        return list(set(self._filter_by_columns.copy()))
-
-    @property
-    def filtered_indices(self) -> list[str] | None:
-        return list(self._filtered_indices.copy())
+    def data_columns(self) -> list[str]:
+        if self._data_columns is not None:
+            return self._data_columns.copy()
+        return []
 
     @property
     def index_column(self) -> str | None:
         return self._index_column
-
-    @property
-    def indices(self) -> list:
-        if self._data is not None:
-            return list(self._data[self._index_column])
-        return []
     
-    @property
-    def n_data_points(self):
-        return self._n_datapoints
+    @index_column.setter
+    def index_column(self, col: str) -> None:
+        if col in self._columns:
+            self._index_column = col
+            self._client.index_field = col
+            if self._data is not None:
+                self._data[col].astype("str")
+        else:
+            logger.error(
+                f"Could not set {col} as the index column as there is no such column in the data... "
+                f"Valid columns include: {", ".join(self._columns)}"
+            )
 
+    @property
+    def smiles_column(self) -> str | None:
+        return self._smiles_column
+    
+    @smiles_column.setter
+    def smiles_column(self, col: str) -> None:
+        if col in self._columns:
+            self._smiles_column = col
+            self._client.smiles_field = col
+        else:
+            logger.error(
+                f"Could not set {col} as the SMILES column as there is no such column in the data... "
+                f"Valid columns include: {", ".join(self._columns)}"
+            )
+    
     @property
     def smiles_like_cols(self) -> list[str]:
         if self._smiles_like_cols:
             return self._smiles_like_cols.copy()
         return []
+
+    @property
+    def indices(self) -> list[str]:
+        if self._data is not None:
+            return list(self._data[self._index_column])
+        return []
     
+    @property
+    def filtered_indices(self) -> list[str]:
+        if self._filtered_indices is not None:
+            return list(self._filtered_indices)
+        return []
+    
+    @property
+    def added_indices(self) -> list[str]:
+        if self._added_indices is not None:
+            return list(self._added_indices)
+        return []
+    
+    @property
+    def n_data_points(self) -> int:
+        if self._n_datapoints is not None:
+            return self._n_datapoints
+        return 0
+    
+    @property
+    def use_external_data (self) -> bool:
+        return self._use_external_data
+    
+    @property
+    def use_external_smiles (self) -> bool:
+        return self._use_external_smiles
+    
+    @property
+    def data_initialized (self) -> bool:
+        return self._data_initialized
+    
+    @property
+    def plot_data_initialized (self) -> bool:
+        return self._plot_data_initialized
+    
+    @property
+    def deleting_filter (self) -> bool:
+        return self._deleting_filter
+    
+    def get_available_collections(self, database: str) -> list[str]:
+        """
+        List all the available collections within a database.
+
+        Args:
+            database (str): The name of a database on the server.
+
+        Returns:
+            list[str]: The names of the available collections within the database.
+        """
+
+        available = self.available_databases
+
+        if database not in available:
+            logger.error(
+                f"Cannot show collections for database {database} as there is no such database... "
+                f"Available databases include f{", ".join(available)}"
+            )
+            return []
+        return self._client.available_collections[database]
+    
+    def connect_to_server(self) -> None:
+        """Connect the client to the server."""
+
+        self._client.init_client()
+
+    def fetch(self, fetch_type: str, **kwargs) -> None:
+        """
+        Fetch data from the database according to a given strategy and store
+        the results as a list inside `self._sample`.
+
+        Args:
+            fetch_type (str): Type of fetch operation. One of:
+                - "random_sample": Random subset of docs.
+                - "by_filters": Docs matching active filters.
+                - "index_range": Docs with index in given range.
+                - "index_set": Docs with index in given set.
+                - "all": All docs in the database.
+            **kwargs: Additional fetch parameters (e.g., size, start, end, file_name).
+        """
+
+        fetcher = {
+            "random_sample": lambda: self._client.random_sample(
+                kwargs.get("size", 1000)
+            ),
+            "by_filters": lambda: self._client.filtered_sample(self._active_filters),
+            "index_range": lambda: self._client.index_range_sample(
+                kwargs.get("start", 0), kwargs.get("end", 5000)
+            ),
+            "index_set": lambda: self._client.index_set_sample(
+                kwargs.get("indices", set())
+            ),
+            "all": lambda: self._client.all_docs(),
+        }
+
+        self._client.ping()
+        if not self._client.is_connected:
+            return
+
+        self._sample = fetcher[fetch_type]()
+        n = len(self._sample)
+
+        if n == 0:
+            if not self._client.can_fetch:
+                logger.error(
+                    f"No data can be fetched from the collection {self._collection} "
+                    f"within database {self._database}..."
+                )
+                return
+            logger.error(
+                    "No data was fetched with the provided strategy"
+                    f"from the collection {self._collection} within database {self._database}..."
+                )
+            self._n_datapoints = 0
+            return
+
+        df = pd.DataFrame(self._sample)
+        
+        if "_id" in list(df.columns):
+            df = df.drop(columns=["_id"])
+
+        cols = list(df.columns)
+        for col in cols:
+            self._column_dtypes[col] = self._categorize_dtype(df[col])
+
+        df[self._index_column] = df[self._index_column].astype(str)
+
+        self._smiles_like_cols = [col for col in list(df.columns) if self._is_smiles_col(df[col])]
+
+        self._data = df
+        self._n_datapoints = n
+
+        self._columns = list(self._data.columns)
+        self._use_external_data = False
+        self._data_initialized = True
+        
+        #self._generate_default_SMARTS()
+
+    def generate_fingerprints(self, fp_params: dict[str, dict[str, Any]] | None) -> None:
+        """
+        Generate all the supported fingerprints for the fetched molecules.
+
+        Args:
+            fp_params (dict): The parameters controlling each fingerprint generator.
+        """
+
+        if self._data is None or self._n_datapoints == 0:
+            logger.error(
+                "Cannot generate fingerprints for an empty sample... "
+                "Remember to fetch molecules before generating fingerprints."
+            )
+            return
+        
+        fp_params = fp_params or {}
+
+        df_2d, df_fp = self._molecule_handler.featurize_data(
+            self._data[self._index_column], self._data[self._smiles_column], fp_params
+        )
+
+        df_fp = df_fp.rename(columns={"index": self._index_column})
+        self._fingerprints = df_fp
+        self._data = pd.merge(self._data, df_2d, left_on=self._index_column, right_on="index")
+        self._column_dtypes["img"] = "img_link"
+        self._columns.append("img")
+            
     def add_features(self, new_features: pd.DataFrame, index_col_name: str) -> None:
         if isinstance(new_features, pd.DataFrame):
             try:
@@ -198,71 +446,28 @@ class DataHandler:
                 self._columns = list(set(self._columns + new_cols))
                 for feature in new_features.columns:
                     self._column_dtypes[feature] = self._categorize_dtype(new_features[feature])
-                self._filter_by_columns = list(set(self._filter_by_columns + new_cols))
                 self._generated_cols = list(set(self._generated_cols + new_cols))
             except Exception:
                 logger.exception(f"Could not add the new features:")
         else:
             logger.error("The new features should be given as a dataframe...")
 
-    def _categorize_dtype(self, series: pd.Series, cat_threshold: float=0.05) -> str:
-        """
-        Categorizes Series into int, float, bool, str, categorical, or object.
-        Includes logic to 'detect' categoricals based on unique value density.
-        """
-
-        if isinstance(series.dtype, pd.CategoricalDtype):
-            return "categorical"
-        
-        if pd.api.types.is_bool_dtype(series):
-            return "bool"
-        
-        if pd.api.types.is_integer_dtype(series):
-            if (series.nunique() / len(series)) < cat_threshold:
-                return "categorical"
-            return "int"
-            
-        if pd.api.types.is_float_dtype(series):
-            return "float"
-        
-        if pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(series):
-            unique_ratio = series.nunique() / len(series) if len(series) > 0 else 1
-            
-            if unique_ratio < cat_threshold:
-                return "categorical"
-            
-            if pd.api.types.is_string_dtype(series):
-                return "str"
-            return "object"
-
-        return "other"
-
-    def generate_rdkit_features(self, SMARTS:dict[str, str]) -> ProcessResult:
-        if self.data is None:
-            res = ProcessResult(
-                False, "Fetch molecules before generating features", True, "warning"
+    def generate_smarts_features(self, SMARTS: dict[str, str]) -> ProcessResult:
+        if self._sample is None or self._n_datapoints == 0:
+            logger.error(
+                "Cannot generate SMARTS features for an empty sample... "
+                "Remember to fetch molecules before generating features."
             )
-        else:
-            try:
-                df = self._molecule_handler.generate_rdkit_features(
-                    self._data, SMARTS
-                )
-                cols = list(SMARTS.keys())
-                self._columns.extend(cols)
-                self._filter_by_columns.extend(cols)
-                self._generated_cols.extend(cols)
-                self._data = df
-                res = ProcessResult(
-                    True, "Feature generation finished successfully!", True, "info"
-                )
-            except Exception as e:
-                logger.exception("Error during generating RDKit features:")
-                res = ProcessResult(
-                    False, "An error occured during generating RDKit features...", True, "error"
-                )
-        log_process(res)
-        return res
+            return
 
+        df = self._molecule_handler.generate_smarts_features(
+            self._data, SMARTS
+        )
+        if not df.empty:
+            cols = list(SMARTS.keys())
+            self._generated_cols.extend(cols)
+            self._data = df
+        
     def connect_tqdm(
         self, structures: pn.widgets.Tqdm, fingerprints: pn.widgets.Tqdm, features: pn.widgets.Tqdm
     ) -> None:
@@ -286,21 +491,6 @@ class DataHandler:
 
         self._client.progress_bar = progress_bar
 
-    def get_fp_gen_info(self) -> dict[str, Any]:
-        """
-        Get the available fingerprint generators and their default parameters.
-
-        Returns:
-            (dict[str, Any]): Constructed as:
-                - "available_generators" (list[str]): Names of the supported generators.
-                - "generator_defaults" (dict): Default parameters for each generator.
-        """
-
-        return dict(
-            available_generators=self._molecule_handler.supported_generators,
-            generator_defaults=self._molecule_handler.generator_params,
-        )
-
     def get_client_status(self) -> dict[str, bool]:
         """
         Get the status of the client.
@@ -318,93 +508,37 @@ class DataHandler:
             can_fetch=self._client.can_fetch,
         )
 
-    def get_available_collections(self, database: str) -> list[str]:
-        """
-        List all the available collections within a database.
+    def get_numerical_summary(
+            self,
+            search_field: str,
+            use_filters: bool = False,
+            n_buckets: int = 10,
+            binning_type: str = "equal_width",
+            log_scale_bins: bool = False
+        ) -> dict[str, Any]:
 
-        Args:
-            database (str): The name of a database on the server.
+        filters = None
 
-        Returns:
-            list[str]: The names of the available collections within the database.
-        """
+        if use_filters:
+            filters = self._active_filters
 
-        if not database:
-            return []
-        return self._client.available_collections[database]
-
-    def set_collection(self, database: str, collection: str) -> ProcessResult:
-        """
-        Choose the collection of a database within the server.
-
-        Args:
-            database (str): The name of a database on the server.
-            collection (str): The name of a collection within the database.
-
-        Returns:
-            ProcessResult: See :class:`ProcessResult` for details.
-        """
-
-        self._client.set_collection(database, collection)
-
-        collection_fields = self._client.fields
-        self._columns = list(collection_fields.keys())
-        self._filter_by_columns = self._columns
-        self._generated_cols = []
-        self._column_dtypes = collection_fields
-
-        self._current_database = database
-        self._current_collection = collection
-
-        if self._client.is_connected:
-            res = ProcessResult(
-                True, "Collection connected successfully!", True, "info"
-            )
-            self.collection_set = True
-        else:
-            res = ProcessResult(
-                False, "Could not connect to the collection.", True, "error"
-            )
-        log_process(res)
-
-        return res
-
-    def get_collection_info(self) -> dict[str, str | None]:
-        """
-        Get info about the currently selected collection. This inlcudes:
-        - Name of the database
-        - Name of the collection
-        - Name of the selected index column
-        - Name of the selected SMILES column, if applicable
-        """
-
-        return dict(
-            database=self._current_database,
-            collection=self._current_collection,
-            index_column=self._index_column,
-            smiles_column=self._smiles_column,
+        summary = self._client.numerical_field_summary(
+            search_field, filters, n_buckets, binning_type, log_scale_bins
         )
 
-    def get_non_index_columns(self) -> list[str]:
-        """
-        Get all but the index column for the current collection.
+        summary_stats = summary["summary_stats"]
+        t_25_lin = summary["summary_stats"]["25%"]
+        t_75_lin = summary["summary_stats"]["75%"]
+        t_25_log = np.log10(max(t_25_lin, 1e-30))
+        t_75_log = np.log10(max(t_75_lin, 1e-30))
 
-        Returns:
-            list: All data columns except the index column if it has been set.
-        """
+        iqr_dist_lin = t_75_lin - t_25_lin
+        iqr_dist_log =  t_75_log - t_25_log
 
-        cols = []
-        if self._data is not None:
-            cols = list(self._data.columns)
-        if self._index_column is not None:
-            cols.remove(self._index_column)
-        return cols
-
-    def get_numerical_summary(self, search_field: str, use_filters: bool = False, n_buckets: int = 10) -> dict[str, Any]:
-        filters = None
-        if use_filters:
-            filters = self.filters
-        summary = self._client.numerical_field_summary(search_field, filters, n_buckets)
+        summary_stats["linear_iqr"] = [t_25_lin, t_75_lin]
+        summary_stats["log_iqr"] = [t_25_log, t_75_log]
+        summary_stats["log_outlier_bounds"] = [10**(t_25_log - 1.5*iqr_dist_log), 10**(t_75_log + 1.5*iqr_dist_log)]
+        summary_stats["linear_outlier_bounds"] = [t_25_lin - 1.5*iqr_dist_lin, t_75_lin + 1.5*iqr_dist_lin]
 
         return dict(
             edges = summary["distribution"]["edges"],
@@ -415,7 +549,7 @@ class DataHandler:
     def get_categorical_summary(self, search_field: str, use_filters: bool = False) -> dict[str, Any]:
         filters = None
         if use_filters:
-            filters = self.filters
+            filters = self._active_filters
         summary = self._client.categorical_field_summary(search_field, filters)
 
         return dict(
@@ -434,7 +568,7 @@ class DataHandler:
         
         base_filters = {}
         if use_filters:
-            base_filters = self.filters
+            base_filters = self._active_filters
         
         dtype = self.column_dtypes[cat_field] 
         if dtype == "categorical_int":
@@ -447,75 +581,6 @@ class DataHandler:
             query = self._client.filters_to_query(filters)
             summaries[label] = self._client._get_numerical_field_summary_stats(comparison_field, query)
         return summaries
-        
-    def set_index_column(self, column: str) -> ProcessResult:
-        """
-        Set the column to use as the index.
-
-        Args:
-            column (str): The column name.
-
-        Returns:
-            ProcessResult: See :class:`ProcessResult` for details.
-        """
-
-        if self._validate_column(column):
-            self._index_column = column
-            self._client.index_field = column
-            if self._data is not None:
-                self._data[column].astype("str")
-            res = ProcessResult(True, "Index column set.", False, "debug")
-        else:
-            res = ProcessResult(
-                False, "Could not set the index column.", False, "debug"
-            )
-        log_process(res)
-        return res
-
-    def set_smiles_column(self, column: str) -> ProcessResult:
-        """
-        Set the column to use for fingerprint generation.
-
-        Args:
-            column (str): The column name.
-
-        Returns:
-            ProcessResult: See :class:`ProcessResult` for details.
-        """
-
-        if self._validate_column(column):
-            self._smiles_column = column
-            self._client.smiles_field = column
-            res = ProcessResult(True, "SMILES column set.", False, "debug")
-        else:
-            res = ProcessResult(
-                False, "Could not set the SMILES column.", False, "debug"
-            )
-        log_process(res)
-        return res
-
-    def set_fetch_cols(self, columns: list[str]) -> ProcessResult:
-        """
-        Set the columns to fetch for the projection operation.
-
-        Args:
-            columns (list[str]): The names of the columns.
-
-        Returns:
-            ProcessResult: See :class:`ProcessResult` for details.
-        """
-
-        all_valid = all([self._validate_column(col) for col in columns])
-        if all_valid:
-            self._fetch_columns = columns
-            self._client.set_projection(include=columns)
-            res = ProcessResult(True, "Fetch columns set.", False, "debug")
-        else:
-            res = ProcessResult(
-                False, "Could not set the fetch columns.", False, "debug"
-            )
-        log_process(res)
-        return res
 
     def set_external_mol_data(self, generator_params: dict) -> ProcessResult:
         """
@@ -527,149 +592,6 @@ class DataHandler:
 
         self.use_external_smiles = True
         return self.add_fingerprints(generator_params)
-
-    def connect_to_server(self) -> ProcessResult:
-        """
-        Connect the client to the server.
-
-        Returns:
-            ProcessResult: See :class:`ProcessResult` for details.
-        """
-
-        self._client.init_client()
-
-        if not self._client.has_credentials:
-            res = ProcessResult(
-                False, "Improper credentials provided...", True, "error"
-            )
-        elif not self._client.is_connected:
-            res = ProcessResult(False, "Could not connect the client...", True, "error")
-        else:
-            res = ProcessResult(True, "Client connected successfully!", True, "info")
-        log_process(res)
-        return res
-
-    def fetch(self, fetch_type: str, **kwargs) -> ProcessResult:
-        """
-        Fetch data from the database according to a given strategy and store
-        the results as a list inside `self._sample`.
-
-        Args:
-            fetch_type (str): Type of fetch operation. One of:
-                - "random_sample": Random subset of docs.
-                - "by_filters": Docs matching active filters.
-                - "index_range": Docs with index in given range.
-                - "index_set": Docs with index in given set.
-                - "all": All docs in the database.
-            **kwargs: Additional fetch parameters (e.g., size, start, end, file_name).
-
-        Returns:
-            ProcessResult: See :class:`ProcessResult` for details.
-        """
-
-        fetcher = {
-            "random_sample": lambda: self._client.random_sample(
-                kwargs.get("size", 1000)
-            ),
-            "by_filters": lambda: self._client.filtered_sample(self._filters),
-            "index_range": lambda: self._client.index_range_sample(
-                kwargs.get("start", 0), kwargs.get("end", 5000)
-            ),
-            "index_set": lambda: self._client.index_set_sample(
-                kwargs.get("indices", set())
-            ),
-            "all": lambda: self._client.all_docs(),
-        }
-
-        self._client.ping()
-
-        if not self._client.is_connected:
-            res = ProcessResult(
-                False, "Lost connection to the server...", True, "error"
-            )
-        else:
-            self._sample = fetcher[fetch_type]()
-            n = len(self._sample)
-            if n == 0:
-                if not self._client.can_fetch:
-                    res = ProcessResult(False, "The collection is unfetchable...", True, "error")
-                else:
-                    res = ProcessResult(False, "No data was fetched.", True, "error")
-                    self._n_datapoints = 0
-            else:
-                self.use_external_data = False
-                self.use_external_smiles = False
-                self.data_initialized = True
-
-                if len(self._sample) >= self._client_doc_cap:
-                    res = ProcessResult(
-                        True,
-                        f"Document limit reached. Showing first {self._client_doc_cap} documents.",
-                        True,
-                        "warning",
-                    )
-                    self._n_datapoints = self._client_doc_cap
-                else:
-                    res = ProcessResult(
-                        True, "Documents fetched succesfully!", True, "info"
-                    )
-                    self._n_datapoints = n
-        log_process(res)
-        return res
-
-    def add_fingerprints(self, generator_params: dict = {}) -> ProcessResult:
-        """
-        Add all the supported fingerprints for the fetched molecules and store
-        the results as a `pd.DataFrame` inside `self._data`.
-
-        Args:
-            generator_params (dict): The paramaters controlling each fingerprint generator.
-
-        Returns:
-            ProcessResult: See :class:`ProcessResult` for details.
-        """
-
-        if self._sample is None:
-            res = ProcessResult(
-                False, "Fetch molecules before adding fingerprints.", True, "warning"
-            )
-        else:
-            try:
-                if generator_params:
-                    self._molecule_handler.generator_params = generator_params
-
-                df = self._molecule_handler.sample_to_df(self._sample, self._smiles_column)
-
-                df[self._index_column] = df[self._index_column].astype(str)
-
-                self._smiles_like_cols = [col for col in self._columns if self._is_smiles_col(df[col])]
-
-                gens = self._molecule_handler.supported_generators
-                self._fingerprints = df[gens]
-                df = df.drop(columns=gens)
-
-                if "_id" in self._columns:
-                    df = df.drop(columns=["_id"])
-
-                self._data = df
-
-                cols = list(self._data.columns)
-                for col in cols:
-                    self._column_dtypes[col] = self._categorize_dtype(self._data[col])
-
-                self._column_dtypes["img"] = "img_link"
-                self._columns = cols
-                
-                res = ProcessResult(
-                    True, "Fingerprinting finished successfully!", True, "info"
-                )
-            except Exception as e:
-                logger.exception("Error during fingerprinting:")
-                res = ProcessResult(
-                    False, "An error occured during fingerprinting...", True, "error"
-                )
-        log_process(res)
-        return res
 
     def read_bytes(self, filename: str, bytes_: bytes) -> ProcessResult:
         """
@@ -714,18 +636,6 @@ class DataHandler:
         log_process(res)
         return res
 
-    def _str_to_num(self, val):
-        if "." in val:
-            try:
-                return float(val)
-            except:
-                return np.nan
-        else:
-            try:
-                return int(val)
-            except:
-                return np.nan
-
     def add_filter(
         self, feature: str, filter_type: str, filter_options: list
     ) -> list[str] | None:
@@ -757,41 +667,16 @@ class DataHandler:
                 new_filter["start"] = filter_options[0]
                 new_filter["end"] = filter_options[1]
         except IndexError:
-            log_process(
-                ProcessResult(False, f"Filter is missing an argument.", False, "error")
-            )
+            logger.error("Filter is missing an argument.")
 
         if not filter_dtype is None:
             formatted = self._format_filter(new_filter)
-            self._filters[formatted] = new_filter
+            self._active_filters[formatted] = new_filter
 
-            if self.data_initialized and self._data is not None:
+            if self._data_initialized and self._data is not None:
                 self._apply_filter(formatted, new_filter)
 
-        return [*self._filters]
-
-    def _get_filter_dtype(self, ft: str) -> str | None:
-        if ft in ["range", "equal_to_number", "less_than", "greater_than"]:
-            return "numeric"
-        elif ft in ["equal_to_categorical", "set_of_categoricals"]:
-            return "object"
-        else:
-            log_process(
-                ProcessResult(
-                    False,
-                    f"Invalid filter type {ft}. Supported types are {self.supported_filter_types}",
-                    False,
-                    "error",
-                )
-            )
-            return None
-
-    def _normalize_filter_type(self, ft: str) -> str:
-        if "equal" in ft:
-            return "equal_to"
-        elif "set_of" in ft:
-            return "set_of"
-        return ft
+        return [*self._active_filters]
 
     def remove_filters(self, deleted: list) -> list:
         """
@@ -801,19 +686,19 @@ class DataHandler:
             deleted (list[str]): Identifiers of the filters to remove.
 
         Returns:
-            list[str]: Active filter keys aaer deletion.
+            list[str]: Active filter keys after deletion.
         """
 
         for f in deleted:
-            if f in self._filters:
-                del self._filters[f]
+            if f in self._active_filters:
+                del self._active_filters[f]
 
-        if self.data_initialized and self._data is not None:
+        if self._data_initialized and self._data is not None:
             self._filtered_indices = set()
-            for key, f in self.filters.items():
+            for key, f in self._active_filters.items():
                 self._apply_filter(key, f)
 
-        return [*self._filters]
+        return [*self._active_filters]
     
     def remove_filtered_points(self) -> None:
         """
@@ -965,27 +850,50 @@ class DataHandler:
             return doc, img_path
         except:
             return None, None
+        
+    def stratified_subsampling(self, df, group_by_col: str, index_col: str, frac: float = 0.2, seed: int = 42) -> pd.DataFrame:
+        groups = df.groupby(group_by_col)
+        sampled_indices = []
+        for _, group in groups:
+            n = max(1, int(len(group) * frac))
+            sampled_indices.extend(group.sample(n=n, random_state=42).index)
+       
+        sampled_mol_ids = df.loc[sampled_indices, index_col]
+        self._data = self._data[self._data[self._index_column].isin(sampled_mol_ids)].reset_index()
+        self._fingerprints = self._fingerprints[self._fingerprints[self._index_column].isin(sampled_mol_ids)].reset_index()
+        self._n_datapoints = len(self._data)
 
-    def _validate_column(self, column: str) -> bool:
+    def _categorize_dtype(self, series: pd.Series, cat_threshold: float=0.05) -> str:
         """
-        Check that a column exists in the data.
-
-        Args:
-            column (str): The name of the column to check.
-
-        Returns:
-            (bool): True if the column exists in data,
-                or None if it does not exist.
+        Categorizes Series into int, float, bool, str, categorical, or object.
+        Includes logic to 'detect' categoricals based on unique value density.
         """
-        if column in self._columns:
-            return True
-        else:
-            log_process(
-                ProcessResult(
-                    False, f"No column called {column} in data.", False, "warning"
-                )
-            )
-            return False
+
+        if isinstance(series.dtype, pd.CategoricalDtype):
+            return "categorical"
+        
+        if pd.api.types.is_bool_dtype(series):
+            return "bool"
+        
+        if pd.api.types.is_integer_dtype(series):
+            if (series.nunique() / len(series)) < cat_threshold:
+                return "categorical"
+            return "int"
+            
+        if pd.api.types.is_float_dtype(series):
+            return "float"
+        
+        if pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(series):
+            unique_ratio = series.nunique() / len(series) if len(series) > 0 else 1
+            
+            if unique_ratio < cat_threshold:
+                return "categorical"
+            
+            if pd.api.types.is_string_dtype(series):
+                return "str"
+            return "object"
+
+        return "other"
 
     def _is_smiles_col(self, col_series: pd.Series, N_samples: int = 20) -> bool:
         """
@@ -1012,6 +920,33 @@ class DataHandler:
             if mol is None:
                 return False
         return True
+    
+    def _generate_default_SMARTS(self) -> None:
+        path = ROOT / "assets/defaults/molecule_scaffolds.csv"
+        self.generate_smarts_features(pd.read_csv(path))    
+    
+    def _get_filter_dtype(self, ft: str) -> str | None:
+        if ft in ["range", "equal_to_number", "less_than", "greater_than"]:
+            return "numeric"
+        elif ft in ["equal_to_categorical", "set_of_categoricals"]:
+            return "object"
+        else:
+            log_process(
+                ProcessResult(
+                    False,
+                    f"Invalid filter type {ft}. Supported types are {self.supported_filter_types}",
+                    False,
+                    "error",
+                )
+            )
+            return None
+
+    def _normalize_filter_type(self, ft: str) -> str:
+        if "equal" in ft:
+            return "equal_to"
+        elif "set_of" in ft:
+            return "set_of"
+        return ft
 
     def _format_filter(self, filter_spec: dict) -> str | None:
         """
@@ -1026,10 +961,10 @@ class DataHandler:
         """
 
         map_to_string = {
-            "range": lambda: f"{filter_spec['start']} ≤ {filter_spec['feature']} ≤ {filter_spec['end']}",
+            "range": lambda: f"{filter_spec['start']:.3e} ≤ {filter_spec['feature']} ≤ {filter_spec['end']:.3e}",
             "equal_to": lambda: f"{filter_spec['feature']} = {filter_spec['value']}",
-            "less_than": lambda: f"{filter_spec['feature']} < {filter_spec['value']}",
-            "greater_than": lambda: f"{filter_spec['feature']} > {filter_spec['value']}",
+            "less_than": lambda: f"{filter_spec['feature']} < {filter_spec['value']:.3e}",
+            "greater_than": lambda: f"{filter_spec['feature']} > {filter_spec['value']:.3e}",
             "set_of": lambda: f"{filter_spec['feature']} ϵ {filter_spec['value']}",
         }
 
@@ -1079,5 +1014,17 @@ class DataHandler:
             log_process(
                 ProcessResult(False, "No matches, filter not applied", True, "warning")
             )
-            del self._filters[key]
-            return [*self._filters]
+            del self._active_filters[key]
+            return [*self._active_filters]
+
+    def _str_to_num(self, val):
+        if "." in val:
+            try:
+                return float(val)
+            except:
+                return np.nan
+        else:
+            try:
+                return int(val)
+            except:
+                return np.nanA

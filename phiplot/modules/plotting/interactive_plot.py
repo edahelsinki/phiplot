@@ -6,13 +6,14 @@ import colorcet as cc
 import pandas as pd
 import param
 import holoviews as hv
+from holoviews.streams import Pipe
 from jinja2 import Environment, FileSystemLoader
 from .highlighter import Highlighter
 from .line_segments import LineSegments
 from .tracked_point_scatter import TrackedPointScatter
 from phiplot.modules.ui.styling.styling import Styling
 from phiplot.modules.ui.utils import *
-from .debouncer import DebouncedCallback
+from .throttler import ThrottledCallback
 
 if TYPE_CHECKING:
     from phiplot.modules.ui.views.embedding_view import EmbeddingView
@@ -52,6 +53,7 @@ class InteractivePlot:
         self._color_use_log_scale = False
 
         self.is_initialized = False
+        self.palette_update = False
 
         self._components = None
         self._plot_elements = []
@@ -104,7 +106,9 @@ class InteractivePlot:
             self._colors["palette"] = palette
 
         if self.is_initialized:
+            self.palette_update = True
             self.build()
+            self.palette_update = False
 
     def update_coloring(self, feature: str, use_log_scale: bool = False) -> bool:
         """
@@ -172,7 +176,8 @@ class InteractivePlot:
         """
 
         try:
-            self._update_state()
+            if not self.palette_update:
+                self._update_state()
             self._clear_references()
 
             self._components = self._build_elements()
@@ -186,7 +191,7 @@ class InteractivePlot:
             self.render()
             self._set_references()
             self._init_main_scatter()
-            self._set_watchers(DebouncedCallback(self.update, interval=0.25))
+            self._set_watchers(ThrottledCallback(self.update, interval=0.025))
             self.update()
 
             res = ProcessResult(
@@ -216,7 +221,8 @@ class InteractivePlot:
             )
         else:
             with toggle_spinner(self._parent_view._widgets["main_refresh_indicator"]):
-                self._update_state()
+                if not self.palette_update:
+                    self._update_state()
 
                 indices = self._state["indices"]
                 embedding = self._state["embedding"]
@@ -269,7 +275,7 @@ class InteractivePlot:
         """
 
         return hv.Points(pd.DataFrame(columns=["x", "y"]), kdims=["x", "y"]).opts(
-            show_grid=True, responsive=True
+            show_grid=True, responsive=True, xlabel="Latent dimension 1", ylabel="Latent dimension 2"
         )
 
     def _init_main_scatter(self) -> None:
@@ -402,21 +408,24 @@ class InteractivePlot:
                 color_feature=self._color_feature,
                 color_use_log_scale=self._color_use_log_scale
             ),
+            dummy_cp=DummyPoint(self._styling),
             must_link_segments=LineSegments(
                 label="Must-link",
                 data=self.plot_df[["x", "y"]],
                 links=[],
                 color=self._colors["must_link"],
                 line_dash="solid",
+                line_cap="round"
             ),
             cannot_link_segments=LineSegments(
                 label="Cannot-link",
                 data=self.plot_df[["x", "y"]],
                 links=[],
                 color=self._colors["cannot_link"],
-                line_dash="dashed",
+                line_dash="15 20",
+                line_cap="round"
             ),
-            highlighter=Highlighter(radius=25, color="Fuchsia"),
+            highlighter=Highlighter(radius=25, color="Fuchsia")
         )
 
     def _set_references(self) -> None:
@@ -463,6 +472,12 @@ class InteractivePlot:
             embedding=self._embedding_handler.embedding,
         )
 
+        if self._components is not None:
+            if len(self._embedding_handler.cp_indices) > 0:
+                self._components["dummy_cp"].visible = True
+            else:
+                self._components["dummy_cp"].visible = False
+
     def set_color(self, element: str, color: str) -> None:
         """
         Set a new color for given element.
@@ -480,3 +495,35 @@ class InteractivePlot:
                 self.update()
             else:
                 self.build()
+
+
+class DummyPoint:
+    def __init__(self, styling, label="Control point"):
+        self._styling = styling
+        self._visib = False
+        self._pipe = Pipe(data={"x": [], "y": []})
+        self._obj = hv.DynamicMap(self._create_points, streams=[self._pipe])
+
+    def _create_points(self, data):
+        """Internal callback to generate the Points element."""
+        return hv.Points(data, kdims=["x", "y"], label="Control point").opts(
+            line_color=self._styling.default_plot_colors["control_point"],
+            color=self._styling.default_plot_colors["fill"],
+            line_width=2,
+            size=4
+        )
+
+    @property
+    def visible(self):
+        return self._visib
+    
+    @visible.setter
+    def visible(self, val):
+        self._visib = val
+        if self._visib:
+            self._pipe.send({"x": [0], "y": [0]})
+        else:
+            self._pipe.send({"x": [], "y": []})
+
+    def get_object(self):
+        return self._obj

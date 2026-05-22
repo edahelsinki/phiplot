@@ -10,10 +10,22 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import Draw, rdFingerprintGenerator
+from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Chem import MACCSkeys
 
 from phiplot.modules.ATMOMACCS import *
+from phiplot.modules.utils.default_param_parser import DefaultParamParser
 
 logger = logging.getLogger(__name__)
+
+
+class MACCSGenerator:
+    """Wrapper to make RDKit's MACCS function compatible with the generator pattern."""
+    def __init__(self, **kwargs):
+        pass
+        
+    def GetFingerprint(self, mol):
+        return MACCSkeys.GenMACCSKeys(mol)
 
 
 class MoleculeHandler:
@@ -25,53 +37,18 @@ class MoleculeHandler:
         - Storing results into structured DataFrames
     """
 
-    _supported_generators = {
-        "Morgan": rdFingerprintGenerator.GetMorganGenerator,
-        "RDKit": rdFingerprintGenerator.GetRDKitFPGenerator,
-        "AtomPairs": rdFingerprintGenerator.GetAtomPairGenerator,
-        "TopologicalTorsions": rdFingerprintGenerator.GetTopologicalTorsionGenerator,
-        "ATMOMACCS": ATMOMACCSGenerator,
-    }
-
     def __init__(self):
-        self._generator_params = self._create_generator_defaults()
+        self._fp_param_parser = DefaultParamParser("fingerprinting_hyperparams.json")
+
         self._tqdm_struct = None
         self._tqdm_fp = None
-        self._tqdm_rdkit = None
+        self._tqdm_smarts = None
 
     @property
-    def supported_generators(self) -> list[str]:
-        return list(self._supported_generators.keys())
+    def supported_generators(self):
+        return self._fp_param_parser.supported
 
-    @property
-    def generator_params(self) -> dict[str, dict]:
-        return self._generator_params
-
-    @generator_params.setter
-    def generator_params(self, gen_params):
-        """
-        Set generator parameters for supported fingerprint types.
-
-        Args:
-            gen_params (dict): A mapping of fingerprint type → parameter dictionary.
-
-        Raises:
-            KeyError: If a fingerprint type is not in `self._supported_generators`
-                or if a provided parameter is not valid for that generator.
-        """
-        for fp_type, fp_params in gen_params.items():
-            if fp_type not in self.supported_generators:
-                raise KeyError(
-                    f"Invalid fingerprint `{fp_type}`. Supported fingerprints: {self.supported_generators}"
-                )
-            supported_params = list(self._generator_params[fp_type].keys())
-            for param in fp_params:
-                if param not in supported_params:
-                    raise KeyError(
-                        f"Invalid parameter `{param}` for `{fp_type}` generator. Supported parameters: {', '.join(supported_params)}"
-                    )
-
-    def set_tqdm(self, tqdm_struct, tqdm_fp, tqdm_rdkit) -> None:
+    def set_tqdm(self, tqdm_struct, tqdm_fp, tqdm_smarts) -> None:
         """
         Set connection to the tqdm widgets showing 2D
         structure and fingerprint generation progress.
@@ -79,38 +56,30 @@ class MoleculeHandler:
 
         self._tqdm_struct = tqdm_struct
         self._tqdm_fp = tqdm_fp
-        self._tqdm_rdkit = tqdm_rdkit
+        self._tqdm_smarts = tqdm_smarts
 
-    def sample_to_df(
-        self, sample: list[dict] | pd.DataFrame, smiles_col
-    ) -> pd.DataFrame:
+    def featurize_data(
+            self, index: list[str] | pd.Series, smiles: list[str] | pd.Series, fp_params: dict[str, dict[str, Any]] | None = None
+        ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Convert a list or DataFrame of molecule records to a DataFrame
-        with molecular fingerprints and 2D structures.
+        Convert a list of SMILES strings to a DataFrame with molecular fingerprints and 2D structures.
 
         Args:
-            sample (list[dict]): Molecule documents.
+            index (list[str] | pd.Series): The index to use for the resulting dataframe.
+            smiles (list[str] | pd.Series): The SMILES strings to convert.
+            fp_params (dict[str, dict[str, Any]] | None): Dictionary or supported parameters 
+                for the generator including the type and default value. Defaults to None.
 
         Returns:
-            pd.DataFrame: Fully enriched DataFrame with images and fingerprints.
+            (tuple[pd.DataFrame pd.DataFrame]: 
+                - DataFrame with paths to 2D structure images
+                - DataFrame with all generated fingerprints
         """
 
-        if not isinstance(sample, pd.DataFrame):
-            if not sample:
-                return pd.DataFrame()
-            df = pd.DataFrame(sample)
-        elif sample.empty:
-            return pd.DataFrame()
-        else:
-            df = sample
+        df_2d = self._generate_images_parallel(index, smiles)
+        df_fp = self._generate_fingerprints(index, smiles, fp_params)
 
-        df = self._generate_images_parallel(df, smiles_col)
-        df = self._add_fingerprints(df, smiles_col)
-
-        # Drop rows where any fingerprint failed
-        df.dropna(subset=self.supported_generators, inplace=True)
-
-        return df
+        return df_2d, df_fp
 
     def single_sample_to_df(self, sample: dict, smiles_col) -> pd.DataFrame:
         """
@@ -134,7 +103,7 @@ class MoleculeHandler:
         smiles = doc[smiles_col]
         return self._smiles_to_img_path(smiles)
     
-    def generate_rdkit_features(
+    def generate_smarts_features(
             self,
             df: pd.DataFrame,
             SMARTS: dict[str, str],
@@ -144,7 +113,7 @@ class MoleculeHandler:
 
         smiles_list = df[smiles_column].tolist()
 
-        smiles_iter = self._tqdm_rdkit(
+        smiles_iter = self._tqdm_smarts(
             smiles_list,
             desc="Generating features...",
             total=len(smiles_list),
@@ -159,98 +128,25 @@ class MoleculeHandler:
         df = df.join(pd.DataFrame(features))
         return df
 
-    def _create_generator_defaults(self) -> dict[str, dict[str, int | bool]]:
-        """
-        Create a dictionary of default values for all supported arguments
-        of type `int` and `bool` for all supported fingerprint generators.
-
-        Returns:
-            dict[str, dict[str, int | bool]]: The dictionary of default values.
-        """
-
-        generator_params = {}
-        for name, gen in self._supported_generators.items():
-
-            if name == "ATMOMACCS":
-                generator_params[name] = {"bit_width": 6}
-                continue
-
-            generator_params[name] = {}
-            args_dict = self._parse_signature(gen)
-
-            if not args_dict:
-                # fallback default for fpSize
-                generator_params[name]["fpSize"] = 2048
-                continue
-
-            for arg, arg_info in args_dict.items():
-                arg_type = arg_info.get("type")
-                default = arg_info.get("default")
-
-                if arg_type == "int" and default is not None:
-                    try:
-                        generator_params[name][arg] = int(default)
-                    except ValueError:
-                        continue  # skip invalid int defaults
-                elif arg_type == "bool" and default is not None:
-                    generator_params[name][arg] = str(default).lower() == "true"
-
-        return generator_params
-
-    def _parse_signature(self, generator) -> dict[str, dict[str, Any]]:
-        """
-        Parse rdkit fingerprint generator function signature into a dict of parameters.
-
-        Returns:
-            dict[str, dict[str, Any]]: Dictionary or supported parameters for the generator
-                including the type and default value.
-        """
-
-        signature = generator.__doc__
-        match = re.search(r"\(([\s\S]*?)\)\s*->", signature)
-        if not match:
-            return {}
-        args_block = match.group(1)
-
-        # Remove optional-bracket syntax "[ ... ]"
-        args_block = args_block.replace("[", "").replace("]", "")
-
-        # Split on commas not inside parentheses
-        raw_args = [arg.strip() for arg in args_block.split(",") if arg.strip()]
-
-        args_dict = {}
-        for arg in raw_args:
-            # Match each parameter e.g. (int)radius=3
-            m = re.match(r"\(([^)]+)\)\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^,]+)", arg)
-            if m:
-                arg_type, name, default = m.groups()
-                args_dict[name] = {"type": arg_type.strip(), "default": default.strip()}
-            else:
-                # Handle positional args without default: (int)x
-                m = re.match(r"\(([^)]+)\)\s*([A-Za-z_][A-Za-z0-9_]*)", arg)
-                if m:
-                    arg_type, name = m.groups()
-                    args_dict[name] = {"type": arg_type.strip(), "default": None}
-
-        return args_dict
-
     def _generate_images_parallel(
-        self, df: pd.DataFrame, smiles_col, max_workers: int = 4
+        self, index: list[str] | pd.Series, smiles: list[str] | pd.Series, max_workers: int = 4
     ) -> pd.DataFrame:
         """
         Generate molecular images in parallel and add their file paths to the DataFrame.
 
         Args:
-            df (pd.DataFrame): DataFrame with 'smiles' column.
+            index (list[str] | pd.Series): The index to use for the resulting dataframe.
+            smiles (list[str] | pd.Series): The SMILES strings to convert.
+            max_workers (int): Maximum number of parallel workers. Defaults to 4.
 
         Returns:
-            pd.DataFrame: Modified DataFrame with 'img' column.
+            pd.DataFrame: Paths to the 2D structure images
         """
 
         smiles_iter = self._tqdm_struct(
-            df[smiles_col],
+            smiles,
             desc="Generating 2D structures...",
-            total=len(df),
+            total=len(index),
             leave=True,
             colour="#666666",
             mininterval=0.1,
@@ -259,8 +155,7 @@ class MoleculeHandler:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             paths = list(executor.map(self._smiles_to_img_path, smiles_iter))
 
-        df["img"] = paths
-        return df
+        return pd.DataFrame(dict(index=index, img=paths))
 
     @staticmethod
     def _smiles_to_img_path(
@@ -283,43 +178,57 @@ class MoleculeHandler:
             return None
 
         os.makedirs(out_dir, exist_ok=True)
-        filename = f"{hashlib.md5(smiles.encode()).hexdigest()}.jpg"
+        
+        filename = f"{hashlib.md5(smiles.encode()).hexdigest()}.png"
         path = os.path.join(out_dir, filename)
 
         if not os.path.isfile(path):
-            img = Draw.MolToImage(mol, size=(200, 200))
-            img.save(path, format="JPEG", quality=70)
+            d2d = rdMolDraw2D.MolDraw2DCairo(600, 600)
+            
+            opts = d2d.drawOptions()
+            opts.bondLineWidth = 2 
+            opts.addStereoAnnotation = True
+            opts.minFontSize = 14 
+            opts.maxFontSize = 24 
+            opts.padding = 0.1
+            
+            rdMolDraw2D.PrepareAndDrawMolecule(d2d, mol)
+            d2d.FinishDrawing()
+
+            with open(path, "wb") as f:
+                f.write(d2d.GetDrawingText())
 
         return path
 
-    def _add_fingerprints(
-        self, df: pd.DataFrame, smiles_column: str = "smiles"
+    def _generate_fingerprints(
+        self, index: list[str] | pd.Series, smiles: list[str] | pd.Series, fp_params: dict[str, dict[str, Any]]
     ) -> pd.DataFrame:
         """
         Compute and attach all fingerprint types to the DataFrame.
 
         Args:
-            df (pd.DataFrame): Input DataFrame with SMILES.
-            smiles_column (str): Column containing SMILES.
+            index (list[str] | pd.Series): The index to use for the resulting dataframe.
+            smiles (list[str] | pd.Series): The SMILES strings to convert.
+            fp_params (dict[str, dict[str, Any]]): Dictionary or supported 
+                parameters for the generator including the type and default value.
 
         Returns:
             pd.DataFrame: DataFrame with new fingerprint columns.
         """
 
-        smiles_list = df[smiles_column].tolist()
-
         smiles_iter = self._tqdm_fp(
-            smiles_list,
+            smiles,
             desc="Computing fingerprints...",
-            total=len(smiles_list),
+            total=len(index),
             leave=True,
             colour="#666666",
             mininterval=0.1,
         )
 
         all_fps = MoleculeHandler._compute_fps_parallel(
-            smiles_iter, self.supported_generators, self._generator_params
+            smiles_iter, self.supported_generators, fp_params
         )
+        df = pd.DataFrame(dict(index=index))
         for fp_type in self.supported_generators:
             df[fp_type] = [entry.get(fp_type) if entry else None for entry in all_fps]
 
@@ -329,7 +238,7 @@ class MoleculeHandler:
     def _compute_fps_parallel(
         smiles_iter,
         supported_gens: list[str],
-        generator_params: dict[str, dict],
+        fp_params: dict[str, dict],
         max_workers: int = 4,
     ) -> list[dict[str, np.ndarray]]:
         """
@@ -338,7 +247,7 @@ class MoleculeHandler:
         Args:
             smiles_iter: Tqdm iterable containing the list of SMILES strings to process.
             supported_gens (list[str]): List of supported generators.
-            generator_params (dict[str, dict]): The parameters for each fingerprint generator.
+            fp_params (dict[str, dict]): The parameters for each fingerprint generator.
             max_workers (int, optional): Number of worker processes to use. Defaults to 4.
 
         Returns:
@@ -350,7 +259,7 @@ class MoleculeHandler:
         compute = partial(
             MoleculeHandler._compute_all_fps,
             supported_gens=supported_gens,
-            generator_params=generator_params,
+            fp_params=fp_params,
         )
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             results = list(executor.map(compute, smiles_iter))
@@ -358,7 +267,7 @@ class MoleculeHandler:
 
     @staticmethod
     def _compute_all_fps(
-        smiles: str, supported_gens: list[str], generator_params: dict[str, dict]
+        smiles: str, supported_gens: list[str], fp_params: dict[str, dict]
     ) -> dict[str, np.ndarray] | None:
         """
         Compute all supported fingerprints for a given SMILES string.
@@ -366,7 +275,7 @@ class MoleculeHandler:
         Args:
             smiles (str): SMILES representation of the molecule.
             supported_gens (list[str]): List of supported generators.
-            generator_params (dict[str, dict]): The parameters for each fingerprint generator.
+            fp_params (dict[str, dict]): The parameters for each fingerprint generator.
 
         Returns:
             dict[str, np.ndarray] | None:
@@ -381,16 +290,17 @@ class MoleculeHandler:
         for fp_type in supported_gens:
             try:
                 generator = MoleculeHandler._create_generator(
-                    fp_type, **generator_params[fp_type]
+                    fp_type, **fp_params.get(fp_type, {})
                 )
                 fp = generator.GetFingerprint(mol)
                 if fp_type == "ATMOMACCS":
                     result[fp_type] = fp
                 else:
                     result[fp_type] = np.array([int(b) for b in fp.ToBitString()])
-            except Exception as e:
+            except Exception:
+                logger.exception("Error during fingerprinting:")
                 logger.warning(
-                    f"Failed to compute {fp_type} fingerprint for {smiles}: {e}"
+                    f"Failed to compute {fp_type} fingerprint for {smiles}"
                 )
                 result[fp_type] = None
         return result
@@ -422,6 +332,7 @@ class MoleculeHandler:
                 **kwargs
             ),
             "ATMOMACCS": lambda: ATMOMACCSGenerator(**kwargs),
+            "MACCS": lambda: MACCSGenerator(**kwargs)
         }
 
         try:

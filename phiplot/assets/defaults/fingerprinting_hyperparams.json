@@ -1,21 +1,6 @@
 {
-    "ATMOMACCS": {
-        "docs": "atmomaccs_fingerprint",
-        "params": {
-            "bit_width": {
-                "dtype": "int",
-                "restrictions": [1, null],
-                "default": 6
-            },
-            "version": {
-                "dtype": "int",
-                "restrictions": [1, 4],
-                "default": 4
-            }
-        }
-    },
     "Morgan": {
-        "docs": "morgan_fingerprint",
+        "docs": "morgan",
         "params": {
             "radius": {
                 "dtype": "int",
@@ -32,32 +17,12 @@
                 "restrictions": null,
                 "default": false
             },
-            "useBondTypes": {
-                "dtype": "bool",
-                "restrictions": null,
-                "default": true
-            },
-            "useCounts": {
-                "dtype": "bool",
-                "restrictions": null,
-                "default": false
-            },
             "onlyNonzeroInvariants": {
                 "dtype": "bool",
                 "restrictions": null,
                 "default": false
             },
-            "includeRingMembership": {
-                "dtype": "bool",
-                "restrictions": null,
-                "default": true
-            },
             "includeRedundantEnvironments": {
-                "dtype": "bool",
-                "restrictions": null,
-                "default": false
-            },
-            "useFeatures": {
                 "dtype": "bool",
                 "restrictions": null,
                 "default": false
@@ -70,7 +35,7 @@
   }
     },
     "RDKit": {
-        "docs": "rdkit_fingerprint",
+        "docs": "rdkit-fingerprint",
         "params": {
             "minPath": {
                 "dtype": "int",
@@ -115,7 +80,7 @@
         }
     },
     "TopologicalTorsions": {
-        "docs": "topological_torsions_fingerprint",
+        "docs": "topologicaltorsions",
         "params": {
             "includeChirality": {
                 "dtype": "bool",
@@ -136,12 +101,26 @@
                 "dtype": "int",
                 "restrictions": [1, null],
                 "default": 2048
-                },
-            "ownsAtomInvGen": {
-                "dtype": "bool",
-                "restrictions": null,
-                "default": false
+                }
+        }
+    },
+    "ATMOMACCS": {
+        "docs": "atmomaccs",
+        "params": {
+            "bit_width": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 6
+            },
+            "version": {
+                "dtype": "int",
+                "restrictions": [1, 4],
+                "default": 4
             }
         }
+    },
+    "MACCS": {
+        "docs": "maccs_keys",
+        "params": {}
     }
 }

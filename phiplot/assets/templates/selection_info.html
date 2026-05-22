@@ -1,0 +1,36 @@
+<div class="stats-card">
+    
+    <div style="margin-bottom: 16px;">
+        <h3 class="stats-card-title">Index Stats:</h3>
+        <div class="stats-index-ribbon">
+            <span>Min: {{ min_index }}</span>
+            <span>Med: {{ median_index }}</span>
+            <span>Max: {{ max_index }}</span>
+        </div>
+        <div class="stats-total-count">
+            Total Datapoints: <strong>{{ n_data_points }}</strong>
+        </div>
+    </div>
+
+    {% macro column_group(label, cols) %}
+    <details class="stats-group">
+        <summary class="stats-group-summary">
+            {{ label }} ({{ cols|length }})
+        </summary>
+        <div class="stats-column-list">
+            {% for col in cols %}
+                <div class="stats-column-item">{{ col }}</div>
+            {% endfor %}
+            {% if not cols %}
+                <div class="stats-empty-text">None</div>
+            {% endif %}
+        </div>
+    </details>
+    {% endmacro %}
+
+    <h3 class="stats-card-title">Column Types:</h3>
+    {{ column_group("Numerical", numerical_columns) }}
+    {{ column_group("Categorical", categorical_columns) }}
+    {{ column_group("Other", other_columns) }}
+
+</div>

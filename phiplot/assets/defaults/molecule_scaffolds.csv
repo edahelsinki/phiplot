@@ -1,0 +1,11 @@
+feature,SMARTS
+"Carboxylic Acid","[CX3](=O)[OX2H1]"
+"Hydroxyl (Alcohol)","[OX2H1]"
+"Hydroperoxide","[OX2H][OX2]"
+"Aldehyde","[CX3H1](=O)"
+"Ketone","[#6][CX3](=O)[#6]"
+"Organic Nitrate","[OX2][NX3](=O)=O"
+"Peroxyacid","[CX3](=O)[OX2][OX2H1]"
+"Epoxide","C1OC1"
+"Peroxy-Acyl Nitrate (PAN)","[CX3](=O)[OX2][OX2][NX3](=O)=O"
+"Organosulfate","[OX2]S(=O)(=O)[OX2H,OX1-]"

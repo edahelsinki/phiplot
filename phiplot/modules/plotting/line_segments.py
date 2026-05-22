@@ -103,8 +103,9 @@ class LineSegments:
 
         styles = {}
         styles["color"] = kwargs.get("color", "black")
-        styles["line_width"] = kwargs.get("line_width", 8)
+        styles["line_width"] = kwargs.get("line_width", 10)
         styles["line_dash"] = kwargs.get("line_dash", "solid")
+        styles["line_cap"] = kwargs.get("line_cap", "round")
         return styles
 
     def _set_object(self) -> None:

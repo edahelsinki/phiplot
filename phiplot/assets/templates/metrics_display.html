@@ -1,13 +1,21 @@
-<div>
-    <table style="width: 100%; border-collapse: collapse;">
+<div class="metrics-table-container">
+    <table class="metrics-table">
         <thead>
-            <tr><th>Metric</th><th>Value</th></tr>
+            <tr>
+                <th style="text-align: left;">Metric</th>
+                <th style="text-align: right;">Value</th>
+            </tr>
         </thead>
         <tbody>
-        {% for metric, value, bg_color, font_color in metrics %}
+        {% for metric, value, bg_color, font_color, remark in metrics %}
             <tr>
-                <td>{{ metric }}</td>
-                <td style="background-color: {{ bg_color }}; color: {{ font_color }}; text-align: right;">
+                <td class="metric-label">
+                    <div>{{ metric }}</div>
+                    <div style="font-size: 0.75em; opacity: 0.7; font-weight: normal;">
+                        {{ remark }}
+                    </div>
+                </td>
+                <td class="metric-value" style="background-color: {{ bg_color }}; color: {{ font_color }};">
                     {{ "%.3f"|format(value) }}
                 </td>
             </tr>
@@ -15,19 +23,19 @@
         </tbody>
     </table>
 
-    <div style="margin-top: 10px;">
-        <strong>Color legend:</strong>
-        <div style="display: flex; flex-wrap: wrap; margin-top: 5px;">
+    <div class="color-legend-container">
+        <div class="color-legend-title">Color legend:</div>
+        <div class="color-legend-labels-container">
             {% for color, label in legend %}
             <div style="display: flex; align-items: center; margin-right: 10px;">
-                <div style="width: 15px; height: 15px; background-color: {{ color }}; margin-right: 5px;"></div>
-                <span style="font-size: 12px;">{{ label }}</span>
+                <div class="color-legend-box" style="background-color: {{ color }}; width: 12px; height: 12px; margin-right: 5px;"></div>
+                <span class="color-legend-label" style="font-size: 0.85em;">{{ label }}</span>
             </div>
             {% endfor %}
         </div>
-    </div>
 
-    <div style="margin-top: 10px; font-style: italic;">
-        Computed with {{distance_measure}} distance
+        <div class="distance-metric-container" style="margin-top: 10px; font-size: 0.85em;">
+            Computed with <strong>{{distance_measure}}</strong> distance
+        </div>
     </div>
 </div>

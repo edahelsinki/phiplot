@@ -24,7 +24,7 @@ class ClusteringAppearanceMenu(BaseMenu):
         self._color_palette_options = {
             name: palette for name, palette in cc.palette.items() if "glasbey" in name
         }
-        self._color_palette = "glasbey_cool"
+        self._color_palette = "glasbey_hv"
 
         self._floating_panels = dict(
            color_settings = self._build_color_settings_panel(),

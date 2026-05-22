@@ -1,10 +1,14 @@
-<div>
-    <table style="width: 100%; border-collapse: collapse; border: 1px solid #a7afbe;">
+<div class="info-table-container">
+    <table class="info-table">
         <tbody>
         {% for field, value in info.items() %}
             <tr>
-                <td style="border: 1px solid #a7afbe;"><strong>{{ field }}</strong></td>
-                <td style="border: 1px solid #a7afbe;">{{ value }}</td>
+                <td class="info-table-label">
+                    <strong>{{ field }}</strong>
+                </td>
+                <td class="info-table-value">
+                    {{ value }}
+                </td>
             </tr>
         {% endfor %}
         </tbody>

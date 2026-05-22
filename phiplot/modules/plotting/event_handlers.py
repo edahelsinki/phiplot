@@ -1,285 +1,172 @@
 from collections import deque
+from typing import Any, Dict, List, Optional, Union
 from bokeh.models import ColumnDataSource, CustomJS, HoverTool, Plot
 from bokeh.events import Pan, PanStart, PanEnd, Tap
-from .debouncer import DebouncedCallback
-
+from .throttler import ThrottledCallback
 
 class ConstraintTracker:
-    """
-    Track and update embedding constraints on a Bokeh plot object
-    using browser-side mouse and keyboard interactions.
+    """Handles interactive embedding constraints via Bokeh browser events.
 
-    This class uses Bokeh's JavaScript event system (e.g., pan, tap, selection) to
-    monitor user interactions with glyphs on a plot. It enables continuous tracking and
-    real-time updating of control point positions as well as must-link and cannot-link
-    pairs from the browser client.
+    This class synchronizes low-latency browser-side dragging with server-side
+    embedding recalculations. It manages control points, must-link, and
+    cannot-link constraints using mouse and keyboard inputs.
 
     Args:
-        source (ColumnDataSource): The data source used by the Bokeh plot glyphs.
-        plot (Plot): The Bokeh plot object containing the glyphs.
-        embedding_handler: Custom class handling the embedding variables.
+        scatter: The abstraction layer managing the scatter object (e.g., TrackedPointScatter).
+        source: The Bokeh ColumnDataSource containing point coordinates.
+        plot: The Bokeh figure/plot object where events are registered.
+        embedding_handler: The logic handler for the embedding algorithm and constraints.
     """
 
     def __init__(
         self,
+        scatter: Any,
         source: ColumnDataSource,
         plot: Plot,
-        data_handler,
-        embedding_handler,
+        embedding_handler: Any
     ) -> None:
+
+        self.scatter = scatter
         self.source = source
         self.plot = plot
         self.embedding_handler = embedding_handler
-        self.data_handler = data_handler
 
-        self._js_keydown_handler = None
-        self._js_attached = False
+        self.ui_bridge = ColumnDataSource(data=dict(
+            idx=[-1], x=[0.0], y=[0.0], dragging=[0], key=[""], key_count=[0]
+        ))
+
+        self.last_two: deque = deque(maxlen=2)
+        self.dragging: bool = False
+        self.target_coords: Dict[str, Union[float, int]] = {"x": 0.0, "y": 0.0, "idx": -1}
 
         self.hover_tool = self._find_hover_tool()
         self.original_tooltips = self.hover_tool.tooltips if self.hover_tool else None
 
-        self.last_two = deque(maxlen=2)
-        self.selected = {"active": False, "idx": None, "x": None, "y": None}
-        self.mouse_start = {"x": None, "y": None}
-
-        self.mouse_source = ColumnDataSource(data=dict(x=[None], y=[None]))
-        self.start_source = ColumnDataSource(data=dict(x=[None], y=[None]))
-        self.keyboard_source = ColumnDataSource(data=dict(keys=[]))
-        self.tap_source = ColumnDataSource(data=dict(x=[None], y=[None]))
-        self.end_source = ColumnDataSource(data=dict(trigger=[0]))
-
-        self.dragging = False
-
-        self.listener_attached = "false"
         self._setup_callbacks()
-        self.debounced_update = DebouncedCallback(
-            self._update_control_point_position, interval=0.125
-        )
-        self._last_update_time = 0
 
-    def _setup_callbacks(self) -> None:
-        """
-        Set up all necessary JavaScript and Python callbacks to handle
-        user interactions with the plot.
-
-        This includes:
-            - Tap events to select glyphs and listen for keyboard input.
-            - Pan events to track dragging of control points.
-            - Selection changes to update the currently selected glyph.
-        """
-
-        # Tap -> select point
-        self.plot.js_on_event(
-            Tap,
-            CustomJS(
-                args=dict(ksource=self.keyboard_source, tsource=self.tap_source),
-                code=f"""
-                tsource.data = {{x: [cb_obj.x], y: [cb_obj.y]}};
-                tsource.change.emit();
-
-                if (window._bokehKeyHandler) {{
-                    document.removeEventListener('keydown', window._bokehKeyHandler);
-                    window._bokehKeyHandler = null;
-                }}
-
-                window._bokehKeyListenerAttached = {self.listener_attached}
-                if (!window._bokehKeyListenerAttached) {{
-                    window._bokehKeyHandler = function(event) {{
-                        if (!ksource.data.count) {{
-                            ksource.data.count = [0];
-                        }}
-                        let counter = ksource.data.count[0] + 1;
-                        ksource.data = {{keys: [event.key], count: [counter]}};
-                        ksource.change.emit();
-                    }};
-                    document.addEventListener('keydown', window._bokehKeyHandler);
-                }}
-                """,
-            ),
-        )
-        self.listener_attached = "true"
-        self.tap_source.on_change("data", self._on_tap)
-        self.keyboard_source.on_change("data", self._on_keypress)
-
-        # Pan -> update control point position continuously
-        self.plot.js_on_event(
-            Pan,
-            CustomJS(
-                args=dict(source=self.mouse_source),
-                code="""
-            source.data = {x: [cb_obj.x], y: [cb_obj.y]};
-            source.change.emit();
-        """,
-            ),
-        )
-        self.mouse_source.on_change("data", self._on_move)
-
-        # PanStart -> determine mouse position at start
-        self.plot.js_on_event(
-            PanStart,
-            CustomJS(
-                args=dict(source=self.start_source),
-                code="""
-            source.data = {x: [cb_obj.x], y: [cb_obj.y]};
-            source.change.emit();
-        """,
-            ),
-        )
-        self.start_source.on_change("data", self._on_start)
-
-        # PanEnd -> sync final control point
-        self.plot.js_on_event(
-            PanEnd,
-            CustomJS(
-                args=dict(source=self.end_source),
-                code="""
-            source.data = {trigger: [Date.now()]};
-            source.change.emit();
-        """,
-            ),
-        )
-        self.end_source.on_change("data", self._on_end)
-
-        # Currently selected point
+        # Only listen to the bridge and selection changes. No more data-echoing.
+        self.ui_bridge.on_change("data", self._handle_ui_signal)
         self.source.selected.on_change("indices", self._on_selection_change)
 
-    def _on_tap(self, attr, old, new) -> None:
-        """
-        Track the indices of the two most recently tapped glyphs.
+    def _setup_callbacks(self) -> None:
+        args = dict(source=self.source, bridge=self.ui_bridge)
 
-        This maintains a rolling record of recent selections for
-        use in actions like adding constraints or marking control points.
-        """
+        # PanStart: Record initial positions and initialize throttle timer
+        self.plot.js_on_event(PanStart, CustomJS(args=args, code="""
+            const indices = source.selected.indices;
+            if (indices.length > 0) {
+                const idx = indices[0];
+                window._dragIdx = idx;
+                window._mouseX0 = cb_obj.x;
+                window._mouseY0 = cb_obj.y;
+                window._ptX0 = source.data['x'][idx];
+                window._ptY0 = source.data['y'][idx];
+                window._lastEmit = Date.now(); // Throttle timer init
+                
+                bridge.data = {...bridge.data, idx: [idx], dragging: [1]};
+                bridge.change.emit();
+            }
+        """))
 
-        if self.selected["idx"] is None:
+        # Pan: Update visual instantly, but THROTTLE websocket messages to 333ms
+        self.plot.js_on_event(Pan, CustomJS(args=args, code="""
+            if (window._dragIdx !== undefined) {
+                const dx = cb_obj.x - window._mouseX0;
+                const dy = cb_obj.y - window._mouseY0;
+                const nx = window._ptX0 + dx;
+                const ny = window._ptY0 + dy;
+                
+                // 1. Instant visual update (No network traffic)
+                source.data['x'][window._dragIdx] = nx;
+                source.data['y'][window._dragIdx] = ny;
+                source.change.emit();
+
+                // 2. Throttled network update to Python (Max 20 times a second)
+                const now = Date.now();
+                if (now - window._lastEmit > 50) {
+                    bridge.data = {...bridge.data, x: [nx], y: [ny]};
+                    bridge.change.emit();
+                    window._lastEmit = now;
+                }
+            }
+        """))
+
+        self.plot.js_on_event(PanEnd, CustomJS(args=args, code="""
+            if (window._dragIdx !== undefined) {
+                // Ensure the absolute final position is sent
+                const finalX = source.data['x'][window._dragIdx];
+                const finalY = source.data['y'][window._dragIdx];
+                
+                window._dragIdx = undefined;
+                bridge.data = {...bridge.data, x: [finalX], y: [finalY], dragging: [0], idx: [-1]};
+                bridge.change.emit();
+            }
+        """))
+
+        self.plot.js_on_event(Tap, CustomJS(args=args, code="""
+            if (window._bokehKeyHandler) {
+                document.removeEventListener('keydown', window._bokehKeyHandler);
+            }
+            window._bokehKeyHandler = (e) => {
+                if (['p', 'm', 'c'].includes(e.key)) {
+                    bridge.data = {...bridge.data, key: [e.key], key_count: [bridge.data.key_count[0] + 1]};
+                    bridge.change.emit();
+                }
+            };
+            document.addEventListener('keydown', window._bokehKeyHandler);
+        """))
+
+    def _handle_ui_signal(self, attr: str, old: Dict[str, Any], new: Dict[str, Any]) -> None:
+        # Drag Logic
+        if new['dragging'][0] == 1:
+            self.dragging = True
+            if self.hover_tool:
+                self.hover_tool.tooltips = ""
+            
+            # Since JS is now throttling the network, Python can safely execute this directly
+            self.embedding_handler.add_control_point(new['idx'][0], new['x'][0], new['y'][0])
+            
+        elif self.dragging and new['dragging'][0] == 0:
+            self.target_coords = {"idx": new['idx'][0], "x": new['x'][0], "y": new['y'][0]}
+            self._finalize_drag()
+
+        # Keystroke Logic
+        if new['key_count'][0] != old['key_count'][0]:
+            self._on_keypress(new['key'][0])
+
+    def _on_keypress(self, key: str) -> None:
+        if not self.last_two:
             return
-        idx = self.selected["idx"]
-        self.last_two.append(idx)
+        idx = self.last_two[-1]
 
-    def _on_start(self, attr, old, new) -> None:
-        """
-        Initialize dragging state and record the mouse position at the start of a pan event.
-        Also disables hover tooltips during dragging for clarity.
-        """
+        try:
+            if key == "p":
+                self.embedding_handler.add_control_point(idx, self.source.data['x'][idx], self.source.data['y'][idx])
+            elif key == "m" and len(self.last_two) == 2:
+                self.embedding_handler.add_must_link(tuple(sorted(self.last_two)))
+            elif key == "c" and len(self.last_two) == 2:
+                self.embedding_handler.add_cannot_link(tuple(sorted(self.last_two)))
 
-        self.dragging = True
-        self.mouse_start = {"x": new["x"][0], "y": new["y"][0]}
-        if self.hover_tool:
-            self.hover_tool.tooltips = ""
+            e = self.embedding_handler.embedding
+            self.scatter.update_coords(e["x"], e["y"])
+            self.embedding_handler.refresh_plot = True
 
-    def _on_move(self, attr, old, new) -> None:
-        """
-        Continuously track the mouse position during a pan event to update the position
-        of the currently dragged control point.
+        except Exception as err:
+            print(f"Error updating constraints: {err}")
 
-        The control point position is updated based on the delta movement from the drag start.
-        """
-        if not self.selected["active"] or self.mouse_start["x"] is None:
-            return
-        self.debounced_update(new)
-
-    def _update_control_point_position(self, new):
-        idx = self.selected["idx"]
-        x, y = new["x"][0], new["y"][0]
-        dx, dy = x - self.mouse_start["x"], y - self.mouse_start["y"]
-        sx, sy = self.selected["x"], self.selected["y"]
-
-        self.embedding_handler.add_control_point(idx, sx + dx, sy + dy)
-
-    def _update_control_points(self, idx: int) -> None:
-        """
-        Add a new control point or update the position of an existing one.
-
-        Args:
-            idx (int): Index of the glyph to add or update as a control point.
-        """
-
-        x = self.source.data["x"][idx]
-        y = self.source.data["y"][idx]
-        self.embedding_handler.add_control_point(idx, x, y)
-
-    def _add_must_link(self) -> None:
-        """
-        Add a must-link between the two most recently selected glyph indices.
-        """
-
-        if len(self.last_two) == 2:
-            link = tuple(sorted(self.last_two))
-            self.embedding_handler.add_must_link(link)
-
-    def _add_cannot_link(self) -> None:
-        """
-        Add a cannot-link between the two most recently selected glyph indices.
-        """
-        if len(self.last_two) == 2:
-            link = tuple(sorted(self.last_two))
-            self.embedding_handler.add_cannot_link(link)
-
-    def _on_keypress(self, attr, old, new) -> None:
-        """
-        Handle keyboard input after a glyph is tapped:
-
-        - `p`: Mark the most recently selected glyph as a control point.
-        - `m`: Add a must-link constraint between the two most recently selected glyphs.
-        - `c`: Add a cannot-link constraint between the two most recently selected glyphs.
-        """
-
-        if self.keyboard_source.data["keys"][0] == "p":
-            idx = self.last_two[-1]
-            self._update_control_points(idx)
-        elif self.keyboard_source.data["keys"][0] == "m":
-            self._add_must_link()
-        elif self.keyboard_source.data["keys"][0] == "c":
-            self._add_cannot_link()
-
-    def _on_end(self, attr, old, new) -> None:
-        """
-        Finalize the position of a control point after dragging ends.
-
-        This method:
-            - Marks the drag as complete.
-            - Updates the position of the dragged point if a valid index is selected.
-            - Resets the current selection.
-            - Flags that an existing control point was updated.
-            - Restores the original tooltips if they were hidden during dragging.
-        """
-
+    def _finalize_drag(self) -> None:
         self.dragging = False
-        idx = self.selected["idx"]
-        if idx is not None:
-            self._update_control_points(idx)
-        self.selected = {"active": False, "idx": None, "x": None, "y": None}
+        idx = int(self.target_coords['idx'])
+        if idx != -1:
+            self.embedding_handler.add_control_point(idx, self.target_coords['x'], self.target_coords['y'])
+            self.embedding_handler.refresh_cp_display = True
 
-        if self.hover_tool and self.original_tooltips:
+        if self.hover_tool:
             self.hover_tool.tooltips = self.original_tooltips
 
-    def _on_selection_change(self, attr, old, new) -> None:
-        """
-        Store the index and coordinates of the most recently selected glyph.
-        Triggered when the user selects a glyph (e.g., by tapping or clicking).
-        """
+    def _on_selection_change(self, attr: str, old: List[int], new: List[int]) -> None:
+        if new:
+            self.last_two.append(new[0])
 
-        if not new:
-            return
-
-        idx = new[0]
-        self.selected = {
-            "active": True,
-            "idx": idx,
-            "x": self.source.data["x"][idx],
-            "y": self.source.data["y"][idx],
-        }
-
-    def _find_hover_tool(self) -> HoverTool | None:
-        """
-        Locate the HoverTool in the current Bokeh plot.
-
-        Returns:
-            HoverTool if found, otherwise None.
-        Used to temporarily disable tooltips during control point dragging.
-        """
-
-        for tool in self.plot.tools:
-            if isinstance(tool, HoverTool):
-                return tool
-        return None
+    def _find_hover_tool(self) -> Optional[HoverTool]:
+        return next((t for t in self.plot.tools if isinstance(t, HoverTool)), None)

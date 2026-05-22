@@ -2,6 +2,7 @@ from .styling.styling import Styling
 from .views import *
 from .menus import *
 from .modals import *
+from .notification_handler import NotificationHandler
 
 __all__ = [
     "Styling",
@@ -22,5 +23,7 @@ __all__ = [
     # From .modals
     "AboutModal",
     "HelpModal",
-    "RestartModal"
+    "RestartModal",
+    # Notifications,
+    "NotificationHandler"
 ]

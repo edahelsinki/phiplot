@@ -322,5 +322,49 @@
                 "default": 0.5
             }
         }
+    },
+    "UMAP": {
+        "docs": "umap_embedding",
+        "params": {
+            "n_neighbors": {
+                "dtype": "int",
+                "restrictions": [2, null],
+                "default": 15
+            },
+            "min_dist": {
+                "dtype": "float",
+                "restrictions": [0.0, null],
+                "default": 0.1
+            },
+            "metric": {
+                "dtype": "str",
+                "restrictions": null,
+                "default": "euclidean"
+            },
+            "spread": {
+                "dtype": "float",
+                "restrictions": [0.0, null],
+                "default": 1.0
+            },
+            "init": {
+                "dtype": "str",
+                "restrictions": [
+                    "spectral",
+                    "random",
+                    "pca"
+                ],
+                "default": "spectral"
+            },
+            "learning_rate": {
+                "dtype": "float",
+                "restrictions": [0.0, null],
+                "default": 1.0
+            },
+            "repulsion_strength": {
+                "dtype": "float",
+                "restrictions": [0.0, null],
+                "default": 1.0
+            }
+        }
     }
 }

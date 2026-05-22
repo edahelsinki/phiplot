@@ -29,6 +29,7 @@ class EmbeddingView(BaseView):
         self.plot_pane = pn.pane.Bokeh(sizing_mode="stretch_both")
         self.plot = InteractivePlot(self)
         self.plot.render()
+        self._compute_metrics = True
 
         self._menus = dict(
             embedding = EmbeddingMenu(self),
@@ -37,6 +38,7 @@ class EmbeddingView(BaseView):
         )
 
         self._display_panes = dict(
+            info_section = pn.pane.HTML(sizing_mode="stretch_width"),
             metrics = self._create_metrics_section(),
             control_points = DisplayPanel("Control Points"),
             must_links = DisplayPanel("Must-Links"),
@@ -54,6 +56,7 @@ class EmbeddingView(BaseView):
         self.center_column = [self.plot_pane]
 
         self.left_column = [
+            ("Embedding Info", self._display_panes["info_section"]),
             ("Embedding Metrics", self._display_panes["metrics"]),
             ("Link Strength", self._widgets["link_strength_slider"]),
             ("Control Points", self._display_panes["control_points"]),
@@ -90,7 +93,8 @@ class EmbeddingView(BaseView):
     def update_available_features(self):
         self._menus["appearance"].update_available_features()
 
-    def embed(self, recompute: bool = True) -> None:
+    def embed(self, compute_metrics: bool = True, recompute: bool = True) -> None:
+        self._compute_metrics = compute_metrics
         with toggle_spinner(self._widgets["main_refresh_indicator"]):
             algo = self._menus["embedding"].algo
             params = self._menus["embedding"].params
@@ -105,6 +109,9 @@ class EmbeddingView(BaseView):
                 pn.state.notifications.error("Error in initializing the model.")
             elif not plot_success:
                 pn.state.notifications.error("Error in building the embedding.")
+
+            self.title = f"{self.embedding_data_handler.algorithm} Embedding of {self.embedding_data_handler.fingerprint} fingerprints"
+            self._update_info()
 
     def recompute_kernel_heuristics(self) -> None:
         self._menus["embedding"].recompute_kernel_heuristics()
@@ -149,47 +156,82 @@ class EmbeddingView(BaseView):
 
         Renders metrics in HTML with with threshold-based color coding.
         """
+        if not self._compute_metrics:
+            return
 
         if not self.embedding_handler.model_initialized:
             pn.state.notifications.warning("The embedding has not been initialized...")
             return
 
         with toggle_spinner(self._widgets["computing_metrics_spinner"]):
-            template = env.get_template("metrics_display.html")
-
             embedding_metrics = self.embedding_handler.get_embedding_metrics(
                 self._widgets["metrics_distance_selector"].value
             )
+            
+            template = env.get_template("metrics_display.html")
+
+            direction_map = {
+                "Trustworthiness": "Higher is better",
+                "KNN Preservation": "Higher is better",
+                "Shepard Correlation": "Higher is better",
+                "Stress": "Lower is better"
+            }
 
             threshold_color_map = {
-                "Trustworthiness": [0.7, 0.8, 0.95, 1],
-                "KNN Preservation": [0.7, 0.8, 0.9, 1],
-                "Shepard Correlation": [0.5, 0.7, 0.9, 1],
-                "Stress": [0.2, 0.1, 0.05, 0],
+                "Trustworthiness": [0.7, 0.8, 0.95, 1.0],
+                "KNN Preservation": [0.3, 0.45, 0.6, 0.75],
+                "Shepard Correlation": [0.2, 0.4, 0.6, 0.8],
+                "Stress": [0.3, 0.2, 0.1, 0.05]
             }
+
             palette = ["#440154", "#3b528b", "#21908d", "#5dc963"]
             palette_labels = ["Poor", "Fair", "Good", "Excellent"]
+            relative_color = "#7f8c8d" 
+            
+            relative_metrics = []
 
             metrics = []
             for metric, value in embedding_metrics.items():
-                thresholds = threshold_color_map[metric]
+                if metric == "Stress":
+                    continue
+                
+                remark = direction_map.get(metric, "")
+                
+                # Handle Relative
+                if metric in relative_metrics:
+                    metrics.append((metric, value, relative_color, "white", remark))
+                    continue
+
+                # Handle Absolute
+                thresholds = threshold_color_map.get(metric)
+                if not thresholds:
+                    metrics.append((metric, value, "white", "black", remark))
+                    continue
+
                 reverse = thresholds[0] > thresholds[-1]
                 try:
                     if not reverse:
                         idx = next(i for i, x in enumerate(thresholds) if value < x)
                     else:
-                        idx = next(i for i, x in enumerate(thresholds) if x < value)
+                        idx = next(i for i, x in enumerate(thresholds) if value > x)
                     color = palette[idx]
                 except StopIteration:
-                    color = "white"
+                    color = palette[-1]
+                    idx = 3
 
                 font_color = "white" if idx < 3 else "black"
-                metrics.append((metric, value, color, font_color))
+                metrics.append((metric, value, color, font_color, remark))
 
             legend = list(zip(palette, palette_labels))
+            if relative_metrics:
+                legend.append((relative_color, "Relative (Comparative Only)"))
 
             distance_measure = self._widgets["metrics_distance_selector"].value
-            html = template.render(metrics=metrics, legend=legend, distance_measure=distance_measure)
+            html = template.render(
+                metrics=metrics, 
+                legend=legend, 
+                distance_measure=distance_measure
+            )
             self._widgets["metrics_display"].object = html
     
     def _attach_display_actions(self, cp_action, ml_action, cl_action) -> None:
@@ -258,3 +300,15 @@ class EmbeddingView(BaseView):
         )
         self._widgets["link_strength_slider"].param.watch(adjust_link_strength, "value")
         
+    def _update_info(self) -> None:
+        template = env.get_template("simple_table.html")
+        algo = self.embedding_data_handler.algorithm
+        info = {
+            "Fingerprint": self.embedding_data_handler.fingerprint,
+            "Embedding Algorithm": algo,
+            "Number of Molecules": len(self.embedding_data_handler.indices)
+        }
+        if algo == "cKPCA":
+            info["Kernel"] = self.embedding_handler.kernel
+        html = template.render(info=info)
+        self._display_panes["info_section"].object = html

@@ -21,6 +21,17 @@ class EmbeddingConstraintsMenu(BaseMenu):
         )
 
         self._embedding_data_handler = parent_view.embedding_data_handler
+        embedding_handler = self._embedding_data_handler._embedding_handler
+
+        embedding_handler.param.watch(
+            lambda event: self._on_control_points_update(), 
+            'refresh_cp_display'
+        )
+
+        embedding_handler.param.watch(
+            lambda event: self._on_plot_update(), 
+            'refresh_plot'
+        )
 
         self._floating_panels = dict(
            add_cp = self._build_add_control_point_panel(),
@@ -297,3 +308,16 @@ class EmbeddingConstraintsMenu(BaseMenu):
         self._clear_control_points()
         self._clear_must_links()
         self._clear_cannot_links()
+
+    def _on_control_points_update(self):
+        if self._embedding_handler.refresh_cp_display:
+            formatted = self._embedding_data_handler.format_control_points()
+            self.adding_constraint = True
+            self._parent_view.control_points = formatted
+            self._embedding_handler.refresh_cp_display = False
+            self.adding_constraint = False
+
+    def _on_plot_update(self):
+        if self._embedding_handler.refresh_plot:
+            self._parent_view.plot.update()
+            self._embedding_handler.refresh_plot = False

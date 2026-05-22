@@ -3,7 +3,7 @@ import param
 from typing import Any
 import numpy as np
 from scipy.spatial.distance import pdist
-from .embedder import PCA, LLE, Isomap, ICA, tSNE, MDS, cKPCA, LSP
+from .embedder import PCA, LLE, Isomap, ICA, tSNE, MDS, cKPCA, LSP, UMAP
 from .embedding_metrics import EmbeddingMetrics
 from phiplot.modules.ui.utils import log_process, ProcessResult
 from phiplot.modules.utils.default_param_parser import *
@@ -34,6 +34,8 @@ class EmbeddingHandler(param.Parameterized):
     control_points = param.Dict({})
     must_links = param.List([])
     cannot_links = param.List([])
+    refresh_cp_display = param.Boolean(False)
+    refresh_plot = param.Boolean(False)
 
     def __init__(self, cp_init=None, ml_init=None, cl_init=None, **params):
         super().__init__(**params)
@@ -47,6 +49,7 @@ class EmbeddingHandler(param.Parameterized):
 
         self._algorithm = None
         self._model = None
+        self._kernel = None
         self._embedding_params = None
         self._kernel_params = None
         self._link_strength_multiplier = 1
@@ -89,6 +92,10 @@ class EmbeddingHandler(param.Parameterized):
                     False, "Unsupported algorithm. Using 'PCA' instead.", True, "error"
                 )
             )
+
+    @property
+    def kernel(self):
+        return self._kernel
 
     @property
     def embedding(self) -> dict[str, list[float]]:
@@ -273,6 +280,10 @@ class EmbeddingHandler(param.Parameterized):
                     data=self._X,
                     **emb_params
                 ),
+                "UMAP": lambda: UMAP(
+                    data=self._X,
+                    **emb_params
+                ),
                 "cKPCA": lambda: cKPCA(
                     data=self._X,
                     initial_control_points=self.control_points,
@@ -285,6 +296,11 @@ class EmbeddingHandler(param.Parameterized):
                     **emb_params,
                 ),
             }
+
+            if algorithm == "cKPCA":
+                self._kernel = emb_params["kernel"]
+            else:
+                self._kernel = None
 
             self._algorithm = algorithm
             self._model = model_map[algorithm]()
@@ -302,7 +318,7 @@ class EmbeddingHandler(param.Parameterized):
             self.model_initialized = True
             self.must_reembed = False
 
-            res = ProcessResult(True, "Embedding intialized succesfully!", True, "info")
+            res = ProcessResult(True, "Embedding intialized succesfully!", False, "info")
             log_process(res)
         return res
 

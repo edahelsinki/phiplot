@@ -92,8 +92,11 @@ class DataSummaryView(BaseView):
         field: str,
         use_filters: bool = False,
         n_buckets: int = 30,
+        binning_type: str = "equal_width",
         use_relative_freq: bool = False,
         include_KDE: bool = False,
+        xlog: bool = False,
+        ylog: bool = False,
         recompute: bool = True
     ) -> None:
         """
@@ -108,9 +111,12 @@ class DataSummaryView(BaseView):
         current_options = dict(
             field=field,
             n_buckets=n_buckets,
+            binning_type=binning_type,
             use_filters=use_filters,
             use_relative_freq=use_relative_freq,
-            include_KDE=include_KDE
+            include_KDE=include_KDE,
+            xlog=xlog,
+            ylog=ylog
         )
 
         if self._prev_options == current_options:
@@ -122,7 +128,9 @@ class DataSummaryView(BaseView):
         self.title = f"Summary of {field}"
 
         if recompute:
-            summary = self.data_handler.get_numerical_summary(field, use_filters, n_buckets)
+            summary = self.data_handler.get_numerical_summary(
+                field, use_filters, n_buckets, binning_type, xlog
+            )
             self._current_summary = summary
         else:
             summary = self._current_summary
@@ -132,8 +140,10 @@ class DataSummaryView(BaseView):
             counts=summary["counts"],
             xlabel=field,
             CDF=False,
-            KDE=include_KDE,
+            KDE=(include_KDE & (binning_type == "equal_width")),
             relative_freq=use_relative_freq,
+            xlog=xlog,
+            ylog=ylog,
             colors=colors["histogram"]
         ).opts(**self.styling.plot_light)
 
@@ -144,17 +154,32 @@ class DataSummaryView(BaseView):
             CDF=True,
             KDE=False,
             relative_freq=use_relative_freq,
+            xlog=xlog,
+            ylog=ylog,
             colors=colors["histogram"]
         ).opts(**self.styling.plot_light)
 
+        if xlog:
+            ylabel = f"log10({field})"
+        else:
+            ylabel = field
+
         self._boxplot_pane.object = SummaryPlots.build_individual_box_plot(
             summary=summary["summary_stats"],
-            ylabel=field,
+            ylabel=ylabel,
+            log_scale=xlog,
             colors=colors["box_plot"]
         ).opts(**self.styling.plot_light)
         
         if summary:
-            self._build_statistics_section(summary["summary_stats"])
+            summary_stats = {
+                key: summary["summary_stats"][key] 
+                for key in [
+                    "count", "mean", "std", "min",	
+                    "25%", "50%", "75%", "max", "dtype"
+                ]
+            }
+            self._build_statistics_section(summary_stats)
 
     def summarize_categorical(
             self,
@@ -235,7 +260,8 @@ class DataSummaryView(BaseView):
         self._boxplot_pane = pn.pane.HoloViews(
             hv.BoxWhisker([]).opts(
                 ylabel="Search Field",
-                title="Box Plot"
+                title="Property Distribution",
+                fontscale=1.25
             ),
             sizing_mode="stretch_both"
         )
@@ -244,7 +270,8 @@ class DataSummaryView(BaseView):
             hv.Histogram(([], [])).opts(
                 xlabel="Search Field",
                 ylabel="Frequency",
-                title="Distribution"
+                title="Histogram",
+                fontscale=1.25
             ),
             sizing_mode="stretch_both"
         )
@@ -253,7 +280,8 @@ class DataSummaryView(BaseView):
             hv.Histogram(([], [])).opts(
                 xlabel="Search Field",
                 ylabel="Frequency",
-                title="Cumulative Distribution"
+                title="CDF",
+                fontscale=1.25
             ),
             sizing_mode="stretch_both"
         )
@@ -271,7 +299,13 @@ class DataSummaryView(BaseView):
         """
 
         template = env.get_template("simple_table.html")
-        html = template.render(info=summary)
+        formatted = dict()
+        for key, val in summary.items():
+            if isinstance(val, float):
+                formatted[key] = f"{val:.5g}"
+            else:
+                formatted[key] = val
+        html = template.render(info=formatted)
         self.summary_pane.object = html
 
     def _build_molecule_info_panel(self):
@@ -294,3 +328,17 @@ class DataSummaryView(BaseView):
             pn.state.notifications.warning(
                 f"Could not find a molecule with index {search_index} in the current collection..."
             )
+
+    def _filter_outliers(self, field, strategy):
+        summary_stats = self.data_handler.get_numerical_summary(field)["summary_stats"]
+        if strategy == "log_iqr":
+            low, high = summary_stats["log_outlier_bounds"]
+        elif strategy == "linear_iqr":
+            low, high = summary_stats["linear_outlier_bounds"]
+        else:
+            logger.error("Invalid outlier filtering strategy.")
+        self._ui.menus["filters"].add_filter(
+            filter_type="range",
+            feature=field,
+            filter_options=[low, high]
+        )

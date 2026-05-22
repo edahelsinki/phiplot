@@ -1,36 +1,58 @@
 <div style="
     display: flex; 
     flex-wrap: nowrap;
-    align-items: center;
-    gap: 10px; 
-    border: 1px solid #ccc; 
-    padding: 10px; 
-    border-radius: 5px;
+    align-items: stretch;
+    max-width: 550px; 
+    gap: 0px; 
+    border: 1px solid #a7afbe; 
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: #ffffff;
+    font-family: sans-serif;
 ">
-
-    <!-- Column 1: Image -->
     <div style="
-        flex: 0 0 auto; 
-        max-width: 200px;
+        flex: 0 0 250px; 
+        background-color: #f8fafc;
         display: flex;
         align-items: center;
         justify-content: center;
+        padding: 0px;
+        border-right: 1px solid #a7afbe;
     ">
         <img 
             src="{{ img_path }}" 
             alt="Molecule image" 
-            style="max-width: 100%; height: auto; border: 1px solid #ccc;"
+            style="max-width: 100%; height: auto; border-radius: 4px; mix-blend-mode: multiply;"
         >
     </div>
 
-    <!-- Column 2: Data Fields -->
     <div style="
-        flex: 1 1 300px; 
+        flex: 1; 
+        padding: 12px 15px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
     ">
-        {% for field, val in doc.items() %}
-        <div>
-            <b>{{ field }}</b>: {{ val }}
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+            {% for field, val in doc.items() %}
+            <div style="display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #edf2f7; padding-bottom: 2px;">
+                <span style="font-size: 0.75em; font-weight: 600; color: #4a5568; text-transform: uppercase; letter-spacing: 0.03em;">
+                    {{ field }}
+                </span>
+                <span style="
+                    font-family: 'Cascadia Code', 'Source Code Pro', 'Roboto Mono', monospace; 
+                    font-weight: 700; 
+                    color: #1a202c; 
+                    font-size: 0.9em;
+                    word-break: break-all; 
+                    text-align: right;
+                    max-width: 65%;
+                    line-height: 1.2;
+                ">
+                    {{ val }}
+                </span>
+            </div>
+            {% endfor %}
         </div>
-        {% endfor %}
     </div>
 </div>

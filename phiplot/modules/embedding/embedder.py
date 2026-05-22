@@ -12,6 +12,7 @@ import warnings
 import jax
 from jax import numpy as jnp, jit, lax, random, Array, config
 import numpy as np
+import umap
 from sklearn import decomposition
 from sklearn.metrics import pairwise_distances
 import sklearn.manifold as manifold
@@ -44,7 +45,8 @@ class BaseEmbedding(ABC):
         data (Array): Original high-dimensional data points to embed, shape (n_samples, n_features).
     """
 
-    def __init__(self, data: Array) -> None:
+    def __init__(self, data: Array, seed: int = 42) -> None:
+        self.seed = seed
         self.name = ""
         self.is_dynamic = False
         self.verbose = False
@@ -91,6 +93,10 @@ class BaseEmbedding(ABC):
         """
 
         return (x_new - self.mean) / self.std
+    
+    def _get_random_state(self, kwargs: dict) -> dict:
+        kwargs.setdefault("random_state", self.seed)
+        return kwargs
 
 
 class StaticEmbedding(BaseEmbedding):
@@ -311,6 +317,24 @@ class InteractiveEmbedding(BaseEmbedding):
         self.y = jnp.array(list(self.control_points.values()))
 
 
+class UMAP(StaticEmbedding):
+    """
+    Provides a static 2D embedding using Uniform Manifold Approximation and Projection (UMAP),
+    a non-linear dimensionality reduction technique that excels at preserving both 
+    local and global data structure.
+    """
+
+    @timing_logger
+    def __init__(self, data: Array, **kwargs) -> None:
+        super(UMAP, self).__init__(data)
+        self.name = "UMAP"
+        safe_kwargs = self._get_random_state(kwargs)
+        
+        # Initialize and fit UMAP
+        reducer = umap.UMAP(n_components=2, **safe_kwargs)
+        self.embedding = jnp.array(reducer.fit_transform(data))
+
+
 class PCA(StaticEmbedding):
     """
     Provides a static 2D embedding using the first two principal
@@ -327,6 +351,7 @@ class PCA(StaticEmbedding):
         self.projection_matrix = pca.components_
         self.embedding = jnp.array(pca.transform(data))
 
+
 class KPCA(StaticEmbedding):
     """
     Provides a static 2D embedding using the first two principal
@@ -342,6 +367,7 @@ class KPCA(StaticEmbedding):
         kpca.fit(data)
         self.projection_matrix = kpca.components_
         self.embedding = jnp.array(kpca.transform(data))
+
 
 class LLE(StaticEmbedding):
     """
@@ -388,7 +414,8 @@ class ICA(StaticEmbedding):
         super(ICA, self).__init__(data)
         self.name = "ICA"
 
-        ica = decomposition.FastICA(n_components=2, **kwargs)
+        safe_kwargs = self._get_random_state(kwargs)
+        ica = decomposition.FastICA(n_components=2, **safe_kwargs)
         ica.fit(data)
         self.embedding = jnp.array(ica.transform(data))
 
@@ -404,7 +431,8 @@ class tSNE(StaticEmbedding):
         super(tSNE, self).__init__(data)
         self.name = "tSNE"
 
-        tsne = manifold.TSNE(n_components=2, **kwargs)
+        safe_kwargs = self._get_random_state(kwargs)
+        tsne = manifold.TSNE(n_components=2, **safe_kwargs)
         self.embedding = jnp.array(tsne.fit_transform(data))
 
 
@@ -419,9 +447,10 @@ class MDS(StaticEmbedding):
         super(MDS, self).__init__(data)
         self.name = "MDS"
 
+        safe_kwargs = self._get_random_state(kwargs)
+        mds = manifold.MDS(n_components=2, dissimilarity="precomputed", **safe_kwargs)
         dists = pairwise_distances(data, **kwargs)
         dists = (dists + dists.T) / 2.0
-        mds = manifold.MDS(n_components=2, dissimilarity="precomputed")
         self.embedding = mds.fit_transform(dists)
 
 
@@ -633,8 +662,8 @@ class cKPCA(InteractiveEmbedding):
                 orthogonal projection directions. Default is 10.
         """
 
-        self.cp_const_mu = kwargs.get("cp_const_mu", 100)
-        self.cl_ml_const_mu = kwargs.get("cl_ml_const_mu", 1)
+        self.cp_const_mu = kwargs.get("cp_const_mu", 200)
+        self.cl_ml_const_mu = kwargs.get("cl_ml_const_mu", 5)
         self.orth_mu = kwargs.get("orth_mu", 10)
 
         self.cl_ml_const_mu_original = self.cl_ml_const_mu

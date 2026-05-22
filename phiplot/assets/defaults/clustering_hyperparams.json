@@ -1,6 +1,106 @@
 {
+    "Agglomerative": {
+        "docs": "hac",
+        "params": {
+            "n_clusters": {
+                "dtype": "int",
+                "restrictions": [0, null],
+                "default": 2
+            },
+            "metric": {
+                "dtype": "str",
+                "restrictions": ["euclidean", "l1", "l2", "manhattan", "cosine", "precomputed"],
+                "default": "euclidean"
+            },
+            "linkage": {
+                "dtype": "str",
+                "restrictions": ["ward", "complete", "average", "single"],
+                "default": "ward"
+            },
+            "distance_threshold": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": null
+            }
+        }
+    },
+    "KModes": {
+        "docs": "kmodes",
+        "params": {
+            "n_clusters": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 8
+            },
+            "init": {
+                "dtype": "str",
+                "restrictions": ["Huang", "Cao", "random"],
+                "default": "Cao"
+            },
+            "n_init": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 10
+            },
+            "max_iter": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 100
+            }
+        }
+    },
+    "BitBIRCH": {
+        "docs": "bitbirch",
+        "params": {
+            "threshold": {
+                "dtype": "float",
+                "restrictions": [0.0, 1.0],
+                "default": 0.3
+            },
+            "branching_factor": {
+                "dtype": "int",
+                "restrictions": [2, null],
+                "default": 50
+            },
+            "merge_criterion": {
+                "dtype": "str",
+                "restrictions": ["radius", "diameter", "tolerance"],
+                "default": "radius"
+            },
+            "tolerance": {
+                "dtype": "float",
+                "restrictions": [0.0, 1.0],
+                "default": 0.05
+            }
+        }
+    },
+    "KMeans": {
+        "docs": "kmeans",
+        "params": {
+            "n_clusters": {
+                "dtype": "int",
+                "restrictions": [2, null],
+                "default": 8
+            },
+            "max_iter": {
+                "dtype": "int",
+                "restrictions": [1, null],
+                "default": 300
+            },
+            "tol": {
+                "dtype": "float",
+                "restrictions": [0, null],
+                "default": 0.0001
+            },
+            "algorithm": {
+                "dtype": "str",
+                "restrictions": ["lloyd", "elkan"],
+                "default": "lloyd"
+            }
+        }
+    },
     "Birch": {
-        "docs": "birch_clustering",
+        "docs": "birch",
         "params": {
             "threshold": {
                 "dtype": "float",
@@ -20,7 +120,7 @@
         }
     },
     "BisectingKMeans": {
-        "docs": "bisecting_kmeans_clustering",
+        "docs": "bisecting_kmeans",
         "params": {
             "n_clusters": {
                 "dtype": "int",
@@ -49,28 +149,18 @@
             }
         }
     },
-    "KMeans": {
-        "docs": "kmeans_clustering",
+    "Butina": {
+        "docs": "butina",
         "params": {
-            "n_clusters": {
-                "dtype": "int",
-                "restrictions": [2, null],
-                "default": 8
-            },
-            "max_iter": {
-                "dtype": "int",
-                "restrictions": [1, null],
-                "default": 300
-            },
-            "tol": {
+            "threshold": {
                 "dtype": "float",
-                "restrictions": [0, null],
-                "default": 0.0001
+                "restrictions": [0.0, null],
+                "default": 0.5
             },
-            "algorithm": {
+            "metric": {
                 "dtype": "str",
-                "restrictions": ["lloyd", "elkan"],
-                "default": "lloyd"
+                "restrictions": null,
+                "default": "euclidean"
             }
         }
     }

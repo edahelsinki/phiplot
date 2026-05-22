@@ -39,6 +39,7 @@ class EmbeddingMetrics:
         self._original = original
         self._embedding = embedding
         self._distance_measure = distance_measure
+        self._low_d_metric = "euclidean"
         self._n, self._m = original.shape
         self._n_neighbors = min(self._n // 2, n_neighbors)
 
@@ -60,7 +61,7 @@ class EmbeddingMetrics:
 
     def _trustworthiness(self, n_neighbours=10) -> float:
         return trustworthiness(
-            self._original, self._embedding, n_neighbors=n_neighbours
+            self._original, self._embedding, n_neighbors=n_neighbours, metric=self._distance_measure
         )
 
     def _knn_preservation(self, k=10) -> float:
@@ -68,7 +69,7 @@ class EmbeddingMetrics:
             n_neighbors=k + 1, metric=self._distance_measure
         ).fit(self._original)
         nbrs_low = NearestNeighbors(
-            n_neighbors=k + 1, metric=self._distance_measure
+            n_neighbors=k + 1, metric=self._low_d_metric
         ).fit(self._embedding)
 
         _, indices_high = nbrs_high.kneighbors(self._original)
@@ -88,12 +89,18 @@ class EmbeddingMetrics:
 
     def _shepard_correlation(self) -> float:
         dist_high = pdist(self._original, metric=self._distance_measure)
-        dist_low = pdist(self._embedding, metric=self._distance_measure)
+        dist_low = pdist(self._embedding, metric=self._low_d_metric)
         corr, _ = spearmanr(dist_high, dist_low)
         return corr
 
     def _stress(self) -> float:
-        D_high = squareform(pdist(self._original, metric=self._distance_measure))
-        D_low = squareform(pdist(self._embedding, metric=self._distance_measure))
+        D_high = pdist(self._original, metric=self._distance_measure)
+        D_low = pdist(self._embedding, metric=self._low_d_metric)
+        
+        if D_high.max() > 0:
+            D_high = D_high / D_high.max()
+        if D_low.max() > 0:
+            D_low = D_low / D_low.max()
+            
         stress = np.sqrt(np.sum((D_high - D_low) ** 2) / np.sum(D_high**2))
         return stress

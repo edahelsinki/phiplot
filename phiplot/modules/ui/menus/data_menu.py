@@ -6,9 +6,11 @@ import panel as pn
 import param
 from jinja2 import Environment, FileSystemLoader
 from .base_menu import BaseMenu
+from phiplot.modules.utils import *
 from phiplot.modules.ui.floating import *
 from phiplot.modules.ui.widgets import *
 from phiplot.modules.ui.utils import *
+from phiplot.modules.ui.widgets.success_spinner import SuccessSpinner
 
 if TYPE_CHECKING:
     from phiplot.modules.ui.web_ui import WebUI
@@ -35,6 +37,10 @@ class DataMenu(BaseMenu):
             name="Data",
             icon="database"
         )
+
+        self._fp_param_parser = DefaultParamParser("fingerprinting_hyperparams.json")
+        self._fp_widget_constructor = WidgetConstructor(self._fp_param_parser)
+        self._widgets.update(self._fp_widget_constructor.widgets)
 
         self._floating_panels = dict(
             select_collection_panel = self._build_select_collection_panel(),
@@ -63,7 +69,7 @@ class DataMenu(BaseMenu):
             #("Load External Dataset", "load_dataset"),
             None,
             ("Generate Fingerprints", "generate_fps"),
-            ("Generate RDKit Features", "generate_rdkit"),
+            ("Features from SMARTS", "generate_rdkit"),
             #None,
             #("Import State", "import_settings"),
             #("Export State", "export_settings")
@@ -116,25 +122,27 @@ class DataMenu(BaseMenu):
                 text = "Lost connection..."
 
             self._db_status_indicator.color = color
-            self._db_satus_text_pane.objects = [pn.Column(
-                pn.HSpacer(),
-                pn.pane.Markdown(text),
-                pn.HSpacer()
-            )]
+            self._db_satus_text_pane.objects = [
+                pn.pane.HTML(
+                    f'<p style="margin: 0; font-family: var(--monospace-font); font-size: 1.25em">{text}</p>',
+                    align="center"
+                ),
+            ]
             self._db_status_indicator.value = True
 
     def _on_connect_to_server(self):
-        res = self._data_handler.connect_to_server()
+        self._data_handler.connect_to_server()
 
         with self.toggle_db_indicator():
-            if res.success:
-                self._widgets["database_selector"].options = self._data_handler.available_databases
-                first_db = self._data_handler.available_databases[0]
-                firts_collection = self._data_handler.get_available_collections(
-                    first_db
-                )[0]
-                self._widgets["database_selector"].value = first_db
-                self._widgets["collection_selector"].value = firts_collection
+            self._widgets["database_selector"].options = self._data_handler.available_databases
+            first_db = self._data_handler.available_databases[0]
+            first_collection = self._data_handler.get_available_collections(
+                first_db
+            )[0]
+            self._widgets["database_selector"].value = first_db
+            self._widgets["collection_selector"].value = first_collection
+
+        pn.state.notifications.success("Connected to server!")
 
     def _build_db_status_section(self) -> None:
         self._db_status_indicator = pn.indicators.BooleanStatus(
@@ -146,10 +154,12 @@ class DataMenu(BaseMenu):
         )
 
         self._db_satus_text_pane = pn.Column(
-            pn.HSpacer(),
-            pn.pane.Markdown("Waiting Connection..."),
-            pn.HSpacer()
-        )
+        pn.pane.HTML(
+            '<p style="margin: 0; font-family: var(--monospace-font); font-size: 1.25em">Pending...</p>',
+            align="center"
+        ),
+        align="center"
+    )
         
         return pn.Row(
             self._db_status_indicator,
@@ -181,35 +191,41 @@ class DataMenu(BaseMenu):
         )
         self._widgets["connect_collection_button"].on_click(self._on_connect_collection)
 
+        self._widgets["connecting_collection_spinner"] = SuccessSpinner(
+            value=False,
+            **self._styling.default_spinner_style
+        )
+
         window = WindowPanel("Collection", self._window_destination)
         window.contents = [
             self._widgets["database_selector"],
             self._widgets["collection_selector"],
             pn.Spacer(height=self._styling.default_spacer_height),
-            self._widgets["connect_collection_button"],
+            pn.Row(
+                self._widgets["connect_collection_button"],
+                self._widgets["connecting_collection_spinner"]
+            ),
         ]
         return window
 
     def _update_collection_options(self, event: param.parameterized.Event | None = None) -> None:
         self._widgets["collection_selector"].options = self._data_handler.get_available_collections(
             self._widgets["database_selector"].value
-        )
+        )  
 
-    def _on_connect_collection(self, event=None, db: str | None = None, collection: str | None = None):
-        if db is None:
-            db = self._widgets["database_selector"].value
-        if collection is None:
-            collection = self._widgets["collection_selector"].value
-        
-        res = self._data_handler.set_collection(db, collection)
-        self._notify_collection_settings_saved = False
-
-        if res.success:
+    def _on_connect_collection(self, event=None):
+        with toggle_spinner(self._widgets["connecting_collection_spinner"]):
+            self._data_handler.database = self._widgets["database_selector"].value
+            self._data_handler.collection = self._widgets["collection_selector"].value
+            
+            self._notify_collection_settings_saved = False
             self._update_collection_settings_opts()
             self._update_collection_info()
             self._parent_view.update_available_features()
             self._parent_view.views["data_summary"].update_options()
             self._notify_collection_settings_saved = True
+
+        pn.state.notifications.success("Collection connected!")
 
     def _update_collection_settings_opts(self) -> None:
         self._widgets["index_field_selector"].options = self._data_handler.columns
@@ -262,27 +278,16 @@ class DataMenu(BaseMenu):
         return window
     
     def _on_save_collection_settings(self, event=None) -> None:
-        if self._data_handler.collection_set:
-            idx_col = self._widgets["index_field_selector"].value
-            index_res = self._data_handler.set_index_column(idx_col)
-            smiles_res = self._data_handler.set_smiles_column(
-                self._widgets["smiles_field_selector"].value
-            )
-            fetch_res = self._data_handler.set_fetch_cols(
-                self._widgets["fetch_fields_multichoice"].value
-            )
-            results = [index_res, smiles_res, fetch_res]
-
-            if all([res.success for res in results]):
-                self._update_collection_info()
-                self.initial_set = True
-                if self._notify_collection_settings_saved:
-                    pn.state.notifications.success("Collection settings saved succesfully!")
-            else:
-                if self._notify_collection_settings_saved:
-                    pn.state.notifications.error("Error in saving collection settings...")
+        if self._data_handler.collection is not None:
+            self._data_handler.index_column = self._widgets["index_field_selector"].value
+            self._data_handler.smiles_column = self._widgets["smiles_field_selector"].value
+            self._data_handler.columns_to_fetch = self._widgets["fetch_fields_multichoice"].value
+            self._update_collection_info()
+            self.initial_set = True
+            if self._notify_collection_settings_saved:
+                pn.state.notifications.success("Collection settings saved!")
         else:
-            pn.state.notifications.warning("No collection has been selected.")
+            pn.state.notifications.warning("No collection has been selected...")
 
     def _build_fetch_data_panel(self) -> WindowPanel:
         """
@@ -333,7 +338,7 @@ class DataMenu(BaseMenu):
             self._widgets["fetching_method_selector"]
         )
 
-        self._widgets["fetching_data_spinner"] = pn.indicators.LoadingSpinner(
+        self._widgets["fetching_data_spinner"] = SuccessSpinner(
             value=False,
             **self._styling.default_spinner_style
         )
@@ -414,7 +419,9 @@ class DataMenu(BaseMenu):
                 else:
                     kwargs = dict()
 
-                fetch_res = self._data_handler.fetch(fetch_type, **kwargs)
+                self._data_handler.fetch(fetch_type, **kwargs)
+
+        pn.state.notifications.success("Data fetched!")
 
     def _build_load_dataset_panel(self) -> WindowPanel:
         """
@@ -463,17 +470,22 @@ class DataMenu(BaseMenu):
         self._parent_view.views["embedding"].flush_kernel_mpds()
 
     def _set_externel_mol_data(self, event=None) -> None:
-        res = self._data_handler.set_external_mol_data(self._get_fp_gen_params())
+        return
 
     def _get_fp_gen_params(self) -> None:
         """
         Fetch the fingerprint generation parameter values from the widgets.
         """
 
-        result = {}
-        for gen, params in self.fp_gen_param_widgets.items():
-            result[gen] = {p: w.value for p, w in params.items()}
-        return result
+        params = dict()
+        for name, value in self._fp_widget_constructor.values.items():
+            parts = name.split("_")
+            fp = parts[0]
+            param = "_".join(parts[1:-1])
+            if fp not in params:
+                params[fp] = dict()
+            params[fp][param] = value
+        return params
 
     def _build_generate_fps_panel(self) -> WindowPanel:
         """
@@ -487,9 +499,7 @@ class DataMenu(BaseMenu):
             - fingerprint generation
         """
 
-        self._fp_params = self._create_fp_param_section()
-
-        self._widgets["generating_fps_spinner"] = pn.indicators.LoadingSpinner(
+        self._widgets["generating_fps_spinner"] = SuccessSpinner(
             value=False, **self._styling.default_spinner_style
         )
 
@@ -506,7 +516,10 @@ class DataMenu(BaseMenu):
 
         window = WindowPanel("Generate Fingerprints", self._window_destination, width=520)
         window.contents = [
-            pn.Accordion(("Fingerprint Parameters", self._fp_params)),
+            pn.Accordion(
+                ("Fingerprinting Hyperparams", self._build_fp_params_sections()),
+                sizing_mode="stretch_width"
+            ),
             pn.Spacer(height=self._styling.default_spacer_height),
             pn.Row(
                 self._widgets["generate_fps_button"],
@@ -517,50 +530,12 @@ class DataMenu(BaseMenu):
             self._tqdm_fp
         ]
         return window
-    
-    def _create_fp_param_section(self) -> pn.Accordion:
-        """
-        Dynamically create `pn.Column` containing inputs for setting
-        the parameters controlling fingerprint generation based on the
-        available generators in the `MoleculeHandler` class.
-        """
 
-        fp_gen_params_section = pn.Accordion()
-        fp_gen_params_widgets = {}
-        gen_info = self._data_handler.get_fp_gen_info()
-
-        for gen in gen_info["available_generators"]:
-            int_opts = pn.Column()
-            bool_opts = pn.Column()
-            fp_gen_params_widgets[gen] = {}
-            for p, val in gen_info["generator_defaults"][gen].items():
-                if type(val) == int:
-                    w = self._create_int_input(p, val)
-                    int_opts.append(w)
-                elif type(val) == bool:
-                    w = self._create_bool_input(p, val)
-                    bool_opts.append(w)
-                else:
-                    continue
-                fp_gen_params_widgets[gen][p] = w
-
-            int_sect = pn.Column(pn.VSpacer(), int_opts, pn.VSpacer())
-            bool_sect = pn.Column(pn.VSpacer(), bool_opts, pn.VSpacer())
-            fp_gen_params_section.append((gen, pn.Row(int_sect, bool_sect)))
-
-        self.fp_gen_param_widgets = fp_gen_params_widgets
-
-        return fp_gen_params_section
-
-    def _create_int_input(self, name, default) -> pn.widgets.IntInput:
-        return pn.widgets.IntInput(
-            name=name, value=default, step=1, start=0, sizing_mode="stretch_width"
-        )
-
-    def _create_bool_input(self, name, default) -> pn.widgets.Checkbox:
-        return pn.widgets.Checkbox(
-            name=name, value=default, sizing_mode="stretch_width"
-        )
+    def _build_fp_params_sections(self):
+        res = pn.Accordion(sizing_mode="stretch_width")
+        for fp in self._fp_param_parser.supported:
+            res.append((fp, self._fp_widget_constructor.layouts(fp)["two_cols"]))
+        return res
 
     def _on_generate_fps(self, event=None) -> None:
         with toggle_spinner(self.widgets["generating_fps_spinner"]):
@@ -570,9 +545,11 @@ class DataMenu(BaseMenu):
             self._tqdm_fp.value = 0
             self._tqdm_fp.text = "Waiting for fingerprint generation to start..."
 
-            self._data_handler.add_fingerprints(self._get_fp_gen_params())
+            self._data_handler.generate_fingerprints(self._get_fp_gen_params())
             self._parent_view.views["embedding"].recompute_kernel_heuristics()
             self._parent_view.views["embedding"].flush_kernel_mpds()
+
+        pn.state.notifications.success("Fingerprints generated!")
 
     def _build_generate_rdkit_panel(self) -> WindowPanel:
         self._widgets["smarts_feature_name_str"] = pn.widgets.TextInput(
@@ -587,7 +564,7 @@ class DataMenu(BaseMenu):
             accept=".json", multiple=False, sizing_mode="stretch_width"
         )
 
-        self._widgets["generating_rdkit_spinner"] = pn.indicators.LoadingSpinner(
+        self._widgets["generating_rdkit_spinner"] = SuccessSpinner(
             value=False, **self._styling.default_spinner_style
         )
 
@@ -646,7 +623,7 @@ class DataMenu(BaseMenu):
             accept=".json", multiple=False, sizing_mode="stretch_width"
         )
 
-        self._widgets["importing_state_spinner"] = pn.indicators.LoadingSpinner(
+        self._widgets["importing_state_spinner"] = SuccessSpinner(
             value=False, **self._styling.default_spinner_style
         )
 
@@ -718,7 +695,12 @@ class DataMenu(BaseMenu):
     
     def _update_collection_info(self):
         template = env.get_template("simple_table.html")
-        info = self._data_handler.get_collection_info()
+        info = {
+            "Database": self._data_handler.database,
+            "Collection": self._data_handler.collection,
+            "Index Column": self._data_handler.index_column,
+            "Smiles Column": self._data_handler.smiles_column
+        }
         info = {field.replace("_", " ").title(): value for field, value in info.items()}
         html = template.render(info=info)
         self._collection_info_display.object = html

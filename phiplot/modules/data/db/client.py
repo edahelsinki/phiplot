@@ -1,7 +1,7 @@
 from collections import defaultdict
 import logging
 import os
-from math import nan
+from math import nan, log10
 from dotenv import load_dotenv
 from pymongo import MongoClient, errors
 from phiplot.modules.ui.widgets import *
@@ -53,6 +53,10 @@ class DBClient:
         self._progress_bar = None
 
         self._cat_cutoff = 10
+
+    @property
+    def errors(self) -> dict[str, bool]:
+        return self._errors
 
     @property
     def available_collections(self) -> dict[str, list[str]]:
@@ -184,13 +188,17 @@ class DBClient:
                 uri = f"{uri_raw}/?readPreference=secondaryPreferred"
             else:
                 self.has_credentials = False
-                return
+                logger.error(
+                    "The provided database connection credentials are missing ot invalid..."
+                )
 
         try:
             self.client = MongoClient(uri, serverSelectionTimeoutMS=5000)
             self.ping()
         except Exception:
-            return
+            logger.error(
+                "Lost connection to the server while initializing connection..."
+            )
 
         if self.has_credentials and self.is_connected:
             system_dbs = ["admin", "config", "local"]
@@ -209,14 +217,13 @@ class DBClient:
 
         try:
             self.client.admin.command("ping")
-            logger.debug("Database connection is healthy.")
             self.is_connected = True
             self.has_credentials = True
         except errors.OperationFailure as e:
-            logger.debug(f"Operation failure occurred during pinging: {e}")
+            logger.error(f"Operation failure occurred during pinging: {e}")
             self.has_credentials = False
         except errors.PyMongoError as e:
-            logger.debug(f"Generic error occurred during pinging: {e}")
+            logger.error(f"Generic error occurred during pinging: {e}")
             self.is_connected = False
 
     def find_fields(self, N_dtype: int = 100, N_cat: int = 500):
@@ -287,7 +294,7 @@ class DBClient:
 
         if not available_fields:
             logger.error(
-                "There are no fields available. Remember to set the collection first."
+                "There are no fields available."
             )
             return None
         elif field not in available_fields:
@@ -335,7 +342,14 @@ class DBClient:
             logger.error(f"Invalid field dtype {dtype} for categorical field summary.")
         return {}
         
-    def numerical_field_summary(self, search_field: str, filters: dict = None, n_buckets: int = 10) -> dict[str, dict]:
+    def numerical_field_summary(
+            self,
+            search_field: str,
+            filters: dict = None,
+            n_buckets: int = 10,
+            binning_type: str = "equal_width",
+            log_scale_bins: bool = False
+        ) -> dict[str, dict]:
         """
         Get the distribution of values and summary statistics of a numerical field.
 
@@ -365,7 +379,7 @@ class DBClient:
         dtype = self.fields[search_field]
 
         if dtype in ["float", "int"]:
-            distribution = self._get_numerical_field_distribution(search_field, mongo_query, n_buckets)
+            distribution = self._get_numerical_field_distribution(search_field, mongo_query, n_buckets, binning_type, log_scale_bins)
             summary_stats = self._get_numerical_field_summary_stats(search_field, mongo_query)
             if distribution and summary_stats:
                 return dict(
@@ -416,9 +430,9 @@ class DBClient:
             return result
 
         except errors.PyMongoError as e:
-            logger.debug(f"Database error occured when fetching the documents: {e}")
+            logger.error(f"Database error occurred when fetching the documents: {e}")
         except Exception as e:
-            logger.debug(f"Unexpected error occured when fetching the documents: {e}")
+            logger.error(f"Unexpected error occurred when fetching the documents: {e}")
 
         self._progress_bar.finished()
         self.can_fetch = False
@@ -481,9 +495,9 @@ class DBClient:
 
             return sampled_docs
         except errors.PyMongoError as e:
-            logger.debug(f"Database error occured when fetching the documents: {e}")
+            logger.error(f"Database error occurred when fetching the documents: {e}")
         except Exception as e:
-            logger.debug(f"Unexpected error occured when fetching the documents: {e}")
+            logger.error(f"Unexpected error occurred when fetching the documents: {e}")
 
         self._progress_bar.finished()
         self.can_fetch = False
@@ -841,7 +855,9 @@ class DBClient:
             self,
             search_field: str,
             mongo_query: dict | None = None,
-            n_buckets: int = 10
+            n_buckets: int = 10,
+            binning_type: str = "equal_width",
+            log_scale_bins: bool = False
         ) -> tuple[list[str], list[int]]:
         """
         Get the distribution of values of a numerical field.
@@ -856,63 +872,102 @@ class DBClient:
         """
 
         field_filter = {search_field: {"$type": "number", "$ne": nan}}
+
+        if log_scale_bins:
+            field_filter[search_field]["$gt"] = 0
+
         mongo_query = mongo_query or {}
+        combined_filter = self._combine_filters(mongo_query, field_filter)
 
-        min_max_pipeline = [
-            {"$match": self._combine_filters(mongo_query, field_filter)},
-            {
-                "$group": {
-                    "_id": None,
-                    "minValue": {"$min": f"${search_field}"},
-                    "maxValue": {"$max": f"${search_field}"}
+        if binning_type == "equal_width":
+            min_max_pipeline = [
+                {"$match": combined_filter},
+                {
+                    "$group": {
+                        "_id": None,
+                        "minValue": {"$min": f"${search_field}"},
+                        "maxValue": {"$max": f"${search_field}"}
+                    }
                 }
-            }
-        ]
+            ]
+            res = list(self._collection.aggregate(min_max_pipeline))
+            if not res or res[0]["minValue"] is None: 
+                return {"edges": [], "counts": []}
 
-        min_max_result = list(self._collection.aggregate(min_max_pipeline))
+            min_val, max_val = res[0]["minValue"], res[0]["maxValue"]
 
-        if not min_max_result:
-            return [], []
+            if min_val == max_val:
+                boundaries = [min_val, max_val + 1e-10]
+            elif log_scale_bins:
+                log_min = log10(min_val)
+                log_max = log10(max_val)
+                log_step = (log_max - log_min) / n_buckets
+                boundaries = [10**(log_min + i * log_step) for i in range(n_buckets)]
+                boundaries.append(max_val + 1e-10)
+            else:
+                step = (max_val - min_val) / n_buckets
+                boundaries = [min_val + i * step for i in range(n_buckets)]
+                boundaries.append(max_val + 1e-10)
 
-        min_search_val = min_max_result[0]["minValue"]
-        max_search_val = min_max_result[0]["maxValue"]
-
-        step = (max_search_val - min_search_val) / n_buckets
-        buckets = [min_search_val + i * step for i in range(n_buckets)] + [max_search_val + 1e-10]
+        elif binning_type == "equal_height":
+            quantile_pipeline = [
+                {"$match": combined_filter},
+                {"$project": {search_field: 1}},
+                {"$sort": {search_field: 1}},
+                {
+                    "$setWindowFields": {
+                        "partitionBy": None,
+                        "sortBy": {search_field: 1},
+                        "output": {
+                            "quantile": {
+                                "$rank": {} # Get the rank of each document
+                            }
+                        }
+                    }
+                },
+                {"$group": {"_id": None, "total": {"$sum": 1}, "values": {"$push": f"${search_field}"}}}
+            ]
+            
+            res = list(self._collection.aggregate(quantile_pipeline))
+            if not res or not res[0]["values"]: return {"edges": [], "counts": []}
+            
+            data = res[0]["values"]
+            total = res[0]["total"]
+            
+            indices = [int(i * (total - 1) / n_buckets) for i in range(n_buckets)]
+            boundaries = [data[i] for i in indices] + [data[-1] + 1e-10]
+            
+            boundaries = sorted(list(set(boundaries)))
+            n_buckets = len(boundaries) - 1
+        else:
+            raise ValueError("binning_type must be 'equal_width' or 'equal_height'")
 
         pipeline = [
-            {"$match": self._combine_filters(mongo_query, field_filter)},
+            {"$match": combined_filter},
             {
                 "$bucket": {
                     "groupBy": f"${search_field}",
-                    "boundaries": buckets,
+                    "boundaries": boundaries,
                     "default": "Other",
-                    "output": {
-                        "count": {"$sum": 1}
-                    }
+                    "output": {"count": {"$sum": 1}}
                 }
             }
         ]
 
-        result = list(self._collection.aggregate(pipeline))
+        bucket_results = list(self._collection.aggregate(pipeline))
+        result_dict = {doc["_id"]: int(doc["count"]) for doc in bucket_results if doc["_id"] != "Other"}
 
-        if not result:
-            return {}
-        
-        full_edges = [(min_search_val + i * step, min_search_val + (i + 1) * step) for i in range(n_buckets)]
-        result_dict = {doc["_id"]: int(doc["count"]) for doc in result if isinstance(doc["_id"], (int, float))}
-        
         edges = []
         counts = []
-
-        for start, end in full_edges:
+        
+        # Construct final output
+        for i in range(len(boundaries) - 1):
+            start = boundaries[i]
+            end = boundaries[i+1]
             edges.append((start, end))
-            counts.append(int(result_dict.get(start, 0)))
+            counts.append(result_dict.get(start, 0))
 
-        return dict(
-            edges = edges,
-            counts = counts
-        )
+        return {"edges": edges, "counts": counts}
     
     def _get_categorical_field_distribution(
             self,

@@ -11,29 +11,18 @@ class SummaryPlots:
 
     @staticmethod
     def build_histogram(
-            edges: list[float | int],
-            counts: list[int],
-            xlabel: str,
-            CDF: bool = False,
-            KDE: bool = False,
-            relative_freq: bool = False,
-            colors: dict | None = None
-        ) -> hv.Rectangles | hv.Overlay:
+        edges: list[tuple[float, float]], # Note: zip(*edges) implies a list of tuples
+        counts: list[int],
+        xlabel: str,
+        CDF: bool = False,
+        KDE: bool = False,
+        relative_freq: bool = False,
+        colors: dict | None = None,
+        xlog: bool = False,
+        ylog: bool = False
+    ) -> hv.Rectangles | hv.Overlay:
         """
-        Build a histogram based on provided counts and edges. Optinally supports
-        the creation of a CDF plot and the inclusion of a KDE curve.
-
-        Args:
-            edges (list[float | int]): The edges of the bins.
-            counts (list[ints]): The count of each bin.
-            xlabel (str): Label for the x-axis.
-            CDF (bool): If True, use cumulative counts. Defaults to False.
-            KDE (bool): If True, include KDE curve. Defaults to False.
-            relative_freq (bool): If True, use relative frequencies. Defaults to False.
-            colors (dict | None): Color settings to use. If None, defaults will be used. Defaults to None.
-
-        Returns:
-            (hv.Rectangles | hv.Overlay): The fully constructed histogram plot.
+        Build a histogram based on provided counts and edges with log scale support.
         """
 
         colors = colors or {}
@@ -41,69 +30,83 @@ class SummaryPlots:
         line_color = colors.get("line", SummaryPlots.styling.neutral_gray)
         kde_color = colors.get("kde", "#ff0000")
 
-        if KDE:
-            kde_curve = SummaryPlots.empirical_kde(edges, counts, kde_color)
-
         ylabel = "Frequency"
-        hover_count = "@top"
+        hover_val_name = "Frequency"
         if relative_freq:
-            counts = np.array(counts)/np.sum(counts)*100
+            counts = np.array(counts) / np.sum(counts) * 100
             ylabel = "Relative Frequency (%)"
-            hover_count = "@top %"
+            hover_val_name = "Rel. Freq %"
 
-        title = "Distribution"
+        title = f"Histogram of '{xlabel}' (Bins = {len(counts)} | N = {int(sum(counts))})"
         if CDF:
-            cumulative_counts = []
-            running_sum = 0
-            for count in counts:
-                running_sum += count
-                cumulative_counts.append(running_sum)
-            counts = cumulative_counts
-            title = "Cumulative Distribution"
+            counts = np.cumsum(counts)
+            title = f"CDF of '{xlabel}' (Bins = {len(counts)} | N = {int(counts[-1])})"
 
         bin_starts, bin_ends = zip(*edges)
         bin_starts = np.array(bin_starts)
         bin_ends = np.array(bin_ends)
-        max_count = max(counts)
-        range = [f"[{e[0]:.3e}, {e[1]:.3e}]" for e in edges]
         
-        max_count = max(counts)
-        
+        range_tooltips = [f"[{e[0]:.3e}, {e[1]:.3e}]" for e in edges]
+
+        if xlog:
+            # Avoid log(0)
+            bin_starts = np.log10(np.where(bin_starts > 0, bin_starts, 1e-12))
+            bin_ends = np.log10(np.where(bin_ends > 0, bin_ends, 1e-12))
+            xlabel = f"log10({xlabel})"
+
+        bottom_val = 0
+        if ylog:
+            bottom_val = 1e-3 if relative_freq else 0.1
+            valid_idx = np.array(counts) > 0
+            bin_starts = bin_starts[valid_idx]
+            bin_ends = bin_ends[valid_idx]
+            counts = np.array(counts)[valid_idx]
+            range_tooltips = np.array(range_tooltips)[valid_idx]
+
         df = pd.DataFrame({
             "left": bin_starts,
             "right": bin_ends,
-            "bottom": 0,
+            "bottom": bottom_val,
             "top": counts,
-            "range": range
+            "range": range_tooltips
         })
 
         hover = HoverTool(tooltips=[
             ("Range", "@range"),
-            ("Frequency", hover_count)
+            (hover_val_name, "@top")
         ])
 
-        hist = hv.Rectangles(df, kdims=["left", "bottom", "right", "top"], vdims=["range"], label="Histogram").opts(
+        hist = hv.Rectangles(df, kdims=["left", "bottom", "right", "top"], vdims=["range"], label="Histogram")
+        
+        y_min = bottom_val if ylog else 0
+        y_max = max(counts) * (10 if ylog else 1.1) # Log space needs more padding
+
+        hist_opts = hv.opts.Rectangles(
             fill_color=fill_color,
             line_color=line_color,
             shared_axes=False,
             xlabel=xlabel,
             ylabel=ylabel,
-            ylim=(0, max_count * 1.1),
+            ylim=(y_min, y_max),
+            logy=ylog,
             title=title,
-            tools=[hover]
+            tools=[hover],
+            fontscale=1.25
         )
 
+        hist = hist.opts(hist_opts)
+
         if KDE:
-            return (hist * kde_curve).opts(
-                shared_axes=False,
-                multi_y=True
-            )
+            kde_curve = SummaryPlots.empirical_kde(edges, counts, kde_color, is_log_scale=xlog)
+            return (hist * kde_curve).opts(shared_axes=False, multi_y=True)
+            
         return hist
 
     @staticmethod
     def build_individual_box_plot(
             summary: dict[str, int | float | str],
             ylabel: str,
+            log_scale: bool = False,
             colors: dict | None = None
         ) -> hv.Overlay:
         """
@@ -120,14 +123,15 @@ class SummaryPlots:
 
         colors = colors or {}
 
-        boxplot = SummaryPlots.build_box_plot(summary, colors=colors)
+        boxplot = SummaryPlots.build_box_plot(summary, colors=colors, log_scale=log_scale)
         return boxplot.opts(
             invert_axes=True,
             yaxis=None,
             ylabel=ylabel,
             xlim=(-0.5, 1.5),
             show_legend=True,
-            title="Box Plot"
+            title=f"Property Distribution of '{ylabel}' (N = {int(summary["count"])})",
+            fontscale=1.25
         )
 
     @staticmethod
@@ -159,7 +163,9 @@ class SummaryPlots:
         box_plots = []
         i = 0
         labels = list(summaries.keys())
+        n = 0
         for label, summary in summaries.items():
+            n += int(summary["count"])
             box_plots.append(SummaryPlots.build_box_plot(summary, i*shift, notched=notched, colors=colors))
             i += 1
         xticks = [(i*1.5 + 0.5, labels[i]) for i in range(len(labels))]
@@ -169,7 +175,8 @@ class SummaryPlots:
                 ylabel=ylabel,
                 xticks=xticks,
                 shared_axes=False,
-                title="Box Plot"
+                title=f"Property Distribution of '{ylabel}' across '{xlabel}' | N = {n}",
+                fontscale=1.25
             )
         )
 
@@ -222,8 +229,9 @@ class SummaryPlots:
             line_color=line_color,
             xlabel=xlabel,
             ylabel=ylabel,
-            title="Distribution",
-            tools=[hover]
+            title=f"Bar Plot of '{xlabel}' (N = {int(sum(counts))})",
+            tools=[hover],
+            fontscale=1.25
         )
 
     @staticmethod
@@ -231,7 +239,8 @@ class SummaryPlots:
             summary: dict[str, int | float | str], 
             shift: float = 0, 
             notched: bool = False,
-            colors: dict | None = None
+            colors: dict | None = None,
+            log_scale: bool = False
         ) -> hv.Overlay:
         """
         Build an individual box plot based on precomputed statistics.
@@ -253,156 +262,155 @@ class SummaryPlots:
         median_color = colors.get("median", "#00ff00")
         std_color = colors.get("std", "#ff0000")
 
-        std_lower = summary["mean"] - summary["std"]
-        std_upper = summary["mean"] + summary["std"]
+        def transform(val):
+            if not log_scale:
+                return val
+            return np.log10(max(val, 1e-30)) if isinstance(val, (int, float)) else val
+
+        raw_std_lower = summary["mean"] - summary["std"]
+        raw_std_upper = summary["mean"] + summary["std"]
+
+        # Transform all necessary coordinates
+        t_min = transform(summary["min"])
+        t_25 = transform(summary["25%"])
+        t_50 = transform(summary["50%"])
+        t_75 = transform(summary["75%"])
+        t_max = transform(summary["max"])
+        t_std_low = transform(raw_std_lower)
+        t_std_high = transform(raw_std_upper)
+
+        t_25_lin = summary["25%"]
+        t_75_lin = summary["75%"]
+        t_25_log = np.log10(max(summary["25%"], 1e-30))
+        t_75_log = np.log10(max(summary["75%"], 1e-30))
+
+        iqr_dist_lin = t_75_lin - t_25_lin
+        iqr_dist_log =  t_75_log - t_25_log
+        current_iqr_dist = iqr_dist_log if log_scale else iqr_dist_lin
 
         count = summary.get("count", 30)
-        iqr = summary["75%"] - summary["25%"]
-        median = summary["50%"]
+
+        meta = {
+            "iqr_linear": f"[{t_25_lin:.3e}, {t_75_lin:.3e}]",
+            "linear_outlier_bounds": f"[{t_25_lin - 1.5*iqr_dist_lin:.3e}, {t_75_lin + 1.5*iqr_dist_lin:.3e}]",
+            "iqr_log": f"[{t_25_log:.3f}, {t_75_log:.3f}]",
+            "log_outlier_bounds": f"[{10**(t_25_log - 1.5*iqr_dist_log):.3e}, {10**(t_75_log + 1.5*iqr_dist_log):.3e}] linear units",
+            "min_max": f"[{summary['min']:.3e}, {summary['max']:.3e}]",
+            "std": f"{summary['std']:.3e}",
+            "median": f"{summary['50%']:.3e}"
+        }
 
         hover = HoverTool(tooltips=[
-            ("IQR", "@iqr"),
+            ("Linear IQR", "@iqr_linear"),
+            ("Linear Outlier Bounds", "@linear_outlier_bounds"), # Fixed missing comma
+            ("Log IQR", "@iqr_log"),
+            ("Log Outlier Bounds", "@log_outlier_bounds"),
             ("min-max", "@min_max"),
             ("std", "@std"),
             ("median", "@median")
         ])
 
-        # Styling options
-        box_opts = hv.opts.Rectangles(fill_color=iqr_fill_color, line_color=iqr_line_color, tools=[hover])
+        box_opts = hv.opts.Rectangles(fill_color=iqr_fill_color, line_color=iqr_line_color, tools=[hover], fontscale=1.25)
         notch_opts = hv.opts.Polygons(line_color=iqr_line_color, show_legend=True, tools=[hover])
         min_max_opts = hv.opts.Segments(line_width=2, line_color=whiskers_color)
         std_opts = hv.opts.Segments(line_width=2, line_color=std_color, line_dash="dashed")
         median_opts = hv.opts.Segments(line_width=3, line_color=median_color)
 
-        # Interquartile box and median line
-        meta = {
-            "iqr": f"[{summary["25%"]:.3e}, {summary["75%"]:.3e}]",
-            "min_max": f"[{summary["min"]:.3e}, {summary["max"]:.3e}]",
-            "std": f"{summary["std"]:.3e}",
-            "median": f"{summary["50%"]:.3e}"
-        }
-
         if notched:
-            notch_span = 1.57 * iqr / count**0.5
-            notch_lower = median - notch_span
-            notch_upper = median + notch_span
+            # Notch calculation happens in the transformed space
+            notch_span = 1.57 * current_iqr_dist / count**0.5
+            notch_lower = t_50 - notch_span
+            notch_upper = t_50 + notch_span
 
             x, y = zip(*[
-                (shift, summary['25%']),
+                (shift, t_25),
                 (shift, notch_lower),
-                (shift + 0.25, median), 
+                (shift + 0.25, t_50), 
                 (shift, notch_upper),          
-                (shift, summary['75%']),
-                (shift + 1, summary['75%']),
+                (shift, t_75),
+                (shift + 1, t_75),
                 (shift + 1, notch_upper),
-                (shift + 0.75, median),
+                (shift + 0.75, t_50),
                 (shift + 1, notch_lower),
-                (shift + 1, summary['25%'])   
+                (shift + 1, t_25)   
             ])
 
             poly_df = pd.DataFrame({
                 "x": x,
                 "y": y,
-                "fill": [iqr_fill_color]*len(x) # force same color for all boxes
+                "fill": [iqr_fill_color]*len(x)
             } | meta)
 
             box = hv.Polygons(poly_df, kdims=["x", "y"], vdims=list(meta.keys()) + ["fill"], label="IQR").opts(color="fill").opts(notch_opts)
-            median_line = hv.Segments([((shift + 0.25, median), (shift + 0.75, median))], label="median").opts(median_opts)
+            median_line = hv.Segments([((shift + 0.25, t_50), (shift + 0.75, t_50))], label="median").opts(median_opts)
         else:
             box_df = pd.DataFrame({
                 "left": [shift],
-                "bottom": [summary['25%']],
+                "bottom": [t_25],
                 "right": [shift + 1],
-                "top": [summary['75%']]
+                "top": [t_75]
             } | meta)
 
             box = hv.Rectangles(box_df, kdims=["left", "bottom", "right", "top"], vdims=list(meta.keys()), label="IQR").opts(box_opts)
-            median_line = hv.Segments([((shift, median), (shift + 1, median))], label="median").opts(median_opts)
+            median_line = hv.Segments([((shift, t_50), (shift + 1, t_50))], label="median").opts(median_opts)
 
-        # Whiskers
+        # Whiskers (Min-Max)
         cap_width = 0.5
         min_max_whiskers = hv.Segments([
-            ((shift + 0.5, summary['min']), (shift + 0.5, summary['25%'])),
-            ((shift + 0.5 - cap_width/2, summary['min']), (shift + 0.5 + cap_width/2, summary['min'])),
-            ((shift + 0.5, summary['75%']), (shift + 0.5, summary['max'])),
-            ((shift + 0.5 - cap_width/2, summary['max']), (shift + 0.5 + cap_width/2, summary['max']))
+            ((shift + 0.5, t_min), (shift + 0.5, t_25)),
+            ((shift + 0.5 - cap_width/2, t_min), (shift + 0.5 + cap_width/2, t_min)),
+            ((shift + 0.5, t_75), (shift + 0.5, t_max)),
+            ((shift + 0.5 - cap_width/2, t_max), (shift + 0.5 + cap_width/2, t_max))
         ], label="min-max").opts(min_max_opts)
         
+        # Whiskers (Std Dev)
         cap_width = 0.3
         std_whisker = hv.Segments([
-            ((shift + 0.5, std_lower), (shift + 0.5, std_upper)),   
-            ((shift + 0.5 - cap_width/2, std_lower), (shift + 0.5 + cap_width/2, std_lower)),
-            ((shift + 0.5 - cap_width/2, std_upper), (shift + 0.5 + cap_width/2, std_upper))
+            ((shift + 0.5, t_std_low), (shift + 0.5, t_std_high)),   
+            ((shift + 0.5 - cap_width/2, t_std_low), (shift + 0.5 + cap_width/2, t_std_low)),
+            ((shift + 0.5 - cap_width/2, t_std_high), (shift + 0.5 + cap_width/2, t_std_high))
         ], label="std").opts(std_opts)
 
-        # Combine elements
         return box * min_max_whiskers * std_whisker * median_line
 
     @staticmethod
-    def old_empirical_kde(
-            edges: list[float | int ],
-            counts: list[int],
-            color: str | None = None
-        ) -> hv.Curve:
-        """
-        Estimate a smooth kernel density from binned sample data using a Gaussian kernel.
-
-        The underlying continuous probability density function is approximated
-        from discrete binned data (histogram). The procedure expands bin counts into
-        a sample set, adds small Gaussian jitter to bin centers, and computes a kernel
-        density estimate (KDE).
-
-        Args:
-            edges (list[float | int]): The edges of the bins.
-            counts (list[ints]): The count of each bin.
-            color (str): Line color setting to use.
-
-        Returns:
-            hv.Curve: The fully constructed curve plot.
-        """
-        
-        e = np.array([start for start, end in edges] + [edges[-1][1]])
-        h = np.array(counts)
-        n = h.sum()
-        bin_centers = (e[:-1] + e[1:]) / 2
-
-        repeat_factor = max(1, int(n * 5 / h.sum()))
-        samples = np.repeat(bin_centers, (h * repeat_factor).astype(int))
-        bandwidth = (e[-1] - e[0]) / (len(edges) * 2)  
-        jitter = np.random.normal(scale=bandwidth, size=len(samples))
-        samples = samples + jitter
-        rkde = sts.gaussian_kde(samples)
-
-        x = np.linspace(e.min(), e.max(), 100)
-        y = rkde.pdf(x)
-        y = y/np.sum(y)
-        df = pd.DataFrame({"x": x, "y": y})
-
-        return hv.Curve(df, label="Empirical KDE\n(Gaussian)").opts(
-            line_color=color,
-            shared_axes=False,
-            ylabel="Probability",
-            ylim=(0, 1.1*max(y))
-        )
-    
-    @staticmethod
-    def empirical_kde(edges, counts, color=None):
-        e = np.array([start for start, _ in edges] + [edges[-1][1]], dtype=float)
-        bin_centers = (e[:-1] + e[1:]) / 2
+    def empirical_kde(edges, counts, color=None, is_log_scale=False):
+        raw_edges = np.array(edges)
+        starts, ends = raw_edges[:, 0], raw_edges[:, 1]
         weights = np.array(counts, dtype=float)
-        
-        kde = KDEUnivariate(bin_centers.astype(float))
-        kde.fit(weights=weights, fft=False, bw='scott')
 
-        x = np.linspace(e.min(), e.max(), 200)
-        y = kde.evaluate(x)
-        
-        y = y / y.sum() 
-        
-        df = pd.DataFrame({"x": x, "y": y})
-        
+        if is_log_scale:
+            log_starts = np.log10(np.where(starts > 0, starts, 1e-12))
+            log_ends = np.log10(np.where(ends > 0, ends, 1e-12))
+            log_centers = (log_starts + log_ends) / 2
+            
+            kde = KDEUnivariate(log_centers)
+            log_range = log_ends[-1] - log_starts[0]
+            kde.fit(weights=weights, fft=False, bw=max(log_range * 0.05, 1e-5))
+            
+            x_final = np.linspace(log_starts[0], log_ends[-1], 500)
+            y_final = kde.evaluate(x_final)
+            
+            y_final = y_final * (np.sum(counts) / np.sum(y_final))
+        else:
+            bin_centers = (starts + ends) / 2
+            kde = KDEUnivariate(bin_centers)
+            data_range = ends[-1] - starts[0]
+            kde.fit(weights=weights, fft=False, bw=max(data_range * 0.05, 1e-5))
+            
+            x_final = np.linspace(starts[0], ends[-1], 500)
+            y_final = kde.evaluate(x_final)
+            y_final = y_final * (np.sum(counts) / np.sum(y_final))
+
+        dx = x_final[1] - x_final[0]
+        area = np.sum(y_final) * dx
+        if area > 0:
+            y_final /= area
+
+        df = pd.DataFrame({"x": x_final, "y": y_final})
         return hv.Curve(df, label="Weighted KDE").opts(
-            line_color=color,
-            ylabel="Probability",
-            ylim=(0, 1.1 * max(y))
+            line_color=color, 
+            ylim=(0, None), 
+            ylabel="Density",
+            fontscale=1.25
         )

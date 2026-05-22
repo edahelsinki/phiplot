@@ -1,0 +1,13 @@
+feature,regex,description
+Nitrile,C#N,Matches the triple bond carbon-nitrogen
+Nitro,\[N\+\]\(=O\)\[O-\],Matches the standard nitro dipole representation
+Carboxylic_Acid,C\(=O\)O,Matches the carboxyl group
+Aldehyde,\[CH\]=O,Matches the formyl group (hydrogen is explicit in brackets)
+Sulfonamide,S\(=O\)\(=O\)N,Matches the sulfonyl-nitrogen linkage
+Isocyanate,N=C=O,Matches the linear NCO chain
+Azide,N=\[N\+\]=\[N-\],Matches the triaza linear sequence
+Ester,C\(=O\)O[A-Za-z0-9],Matches carboxylate with an attached carbon/group
+Primary_Amine,\[NH2\],Matches nitrogen with two explicit hydrogens
+Thiol,\[SH\],Matches sulfur with one explicit hydrogen
+Trifluoromethyl,C\(F\)\(F\)F,Matches the branched CF3 group
+Peroxide,OO,Matches the oxygen-oxygen single bond

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import uuid
 from pathlib import Path
 import panel as pn
-from phiplot.modules import EmbeddingHandler, DataHandler, WebUI
+from phiplot.modules import *
 
 pn.extension("mathjax")
 
@@ -63,7 +63,7 @@ class App:
             document.cookie = "phiplot_session_id={self.session_id}; Expires=${{expires}}, SameSite=None; Secure";
         </script>
         """)
-        self.ui.header.append(cookie)
+        self.ui.header_container.append(cookie)
 
     def clear_id_cookie(self) -> None:
         """
@@ -76,7 +76,7 @@ class App:
             document.cookie = "phiplot_session_id=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; SameSite=None; Secure";
         </script>
         """)
-        self.ui.header.append(cookie)
+        self.ui.header_container.append(cookie)
 
     def restart(self) -> None:
         """

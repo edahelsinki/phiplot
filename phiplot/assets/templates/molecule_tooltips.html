@@ -1,40 +1,63 @@
 <div style="
     display: flex; 
     flex-wrap: nowrap;
-    align-items: center;
+    align-items: stretch;
     max-width: 550px; 
-    gap: 10px; 
-    border: 1px solid #ccc; 
-    padding: 10px; 
-    border-radius: 5px;
+    gap: 0px; 
+    border: 1px solid #a7afbe; 
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: #ffffff;
+    font-family: sans-serif;
 ">
-    <!-- Column 1: Image -->
     <div style="
-        flex: 0 0 auto; 
-        max-width: 200px;
+        flex: 0 0 250px; 
+        background-color: #f8fafc;
         display: flex;
         align-items: center;
         justify-content: center;
+        padding: 0px;
+        border-right: 1px solid #a7afbe;
     ">
         <img 
             src="@img" 
             alt="Molecule image" 
-            style="max-width: 100%; height: auto; border: 1px solid #ccc;"
+            style="max-width: 100%; height: auto; border-radius: 4px; mix-blend-mode: multiply;"
         >
     </div>
 
-    <!-- Column 2: Data Fields -->
     <div style="
-        flex: 1 1 200px; 
-        max_width: 200px;
-        padding-right: 5px
+        flex: 1; 
+        padding: 12px 15px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
     ">
-    {% for col, props in properties.items() %}
-    <div style="{{ props.styles }}">
-        <b>{{ props.title }}</b>: {{ col }}
-    </div>
-    {% endfor %}
-    <div style="font-size: 12px; color: #b90000;">
-        <b>Coordinates</b>: (@x, @y)
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+            {% for col, props in properties.items() %}
+            <div style="display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #edf2f7; padding-bottom: 2px; {{ props.styles }}">
+                <span style="font-size: 0.75em; font-weight: 600; color: #4a5568; text-transform: uppercase; letter-spacing: 0.03em;">
+                    {{ props.title }}
+                </span>
+                <span style="
+                    font-family: 'Cascadia Code', 'Source Code Pro', 'Roboto Mono', monospace; 
+                    font-weight: 700; 
+                    color: #1a202c; 
+                    font-size: 0.9em;
+                    word-break: break-all; 
+                    text-align: right;
+                    max-width: 65%;
+                    line-height: 1.2;
+                ">
+                    {{ col }}
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div style="margin-top: 10px; padding-top: 6px; border-top: 1px dashed #cbd5e0; font-size: 11px; color: #b90000; display: flex; justify-content: space-between;">
+            <span style="font-weight: 600; text-transform: uppercase;">Coordinates</span>
+            <span style="font-family: 'Cascadia Code', monospace; font-weight: 700;">(@x, @y)</span>
+        </div>
     </div>
 </div>

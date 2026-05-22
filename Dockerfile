@@ -20,9 +20,6 @@ COPY README.md ./
 # Add permissions
 RUN chgrp -R 0 /phiplot && chmod -R g+rwx /phiplot
 
-# Bypass runtime project metadata checks
-ENV UV_NO_PROJECT=1
-
 # Create a writable directory for Matplotlib config to avoid permission errors inside the container
 RUN mkdir -p /tmp/matplotlib_config \
     && chgrp -R 0 /tmp/matplotlib_config \
@@ -33,4 +30,4 @@ ENV MPLCONFIGDIR=/tmp/matplotlib_config
 EXPOSE 5006
 
 # Launch the application
-CMD ["uv", "run", "python", "-m", "phiplot.main", "--port=5006", "--address=0.0.0.0"]
+CMD [".venv/bin/python", "-m", "phiplot.main", "--port=5006", "--address=0.0.0.0", "--num_procs=8"]

@@ -6,6 +6,7 @@ import colorcet as cc
 from .base_menu import BaseMenu
 from phiplot.modules.ui.floating import *
 from phiplot.modules.ui.utils import *
+from phiplot.modules.ui.widgets.success_spinner import SuccessSpinner
 
 if TYPE_CHECKING:
     from phiplot.modules.ui.views.embedding_view import EmbeddingView
@@ -59,7 +60,7 @@ class EmbeddingAppearanceMenu(BaseMenu):
 
         window = WindowPanel("Color by Feature", self._window_destination)
 
-        self._widgets["update_coloring_spinner"] = pn.indicators.LoadingSpinner(
+        self._widgets["update_coloring_spinner"] = SuccessSpinner(
             **self._styling.default_spinner_style
         )
 

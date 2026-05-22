@@ -1,6 +1,12 @@
-<img src="phiplot/assets/media/banner.png" alt="PhiPlot banner" width="250"/>
+<div style="text-align: center; margin-bottom: 10px">
+  <img src="phiplot/assets/media/banner.png" alt="PhiPlot banner" style="width: 100%; height: auto;"/>
+</div>
+
+
 
 # Welcome!
+
+<div style="font-size: 1.75em">
 
 PhiPlot is a web-based, interactive Exploratory Data Analysis (EDA) environment designed to explore data about atmospherically relevant molecules. PhiPlot leverages knowledge-based dimensionality reduction to support hypothesis generation, informed subsetting of molecules, and uncovering meaningful patterns within these complex molecular datasets.
 
@@ -10,5 +16,12 @@ To get you started, you can access the *Quick Start Guide* by clicking the **Hel
 
 > 💡 *The source code of the application can be found on [GitHub](https://www.github.com/edahelsinki/phiplot)*
 
+</div>
+
 ## Acknowledgments
+
+<div style="font-size: 1.75em">
+
 The interactive embedding feature of PhiPlot is motivated by [InVis](https://link.springer.com/chapter/10.1007/978-3-642-40994-3_52) application by Paurat and Gärtner, and [InVis 2.0](https://link.springer.com/chapter/10.1007/978-3-031-70371-3_34) application by Chen and Gärtner. Our specific implementation is inspired by the InVis 2.0 tool. The algorithmic principle behind the interactive embedding is based on [Knowledge-Based Kernel PCA](https://link.springer.com/chapter/10.1007/978-3-662-44851-9_32) introduced by Oglic, Paurat and Gärtner. The [ATMOMACCS](https://arxiv.org/abs/2510.20465) fingerprinting algorithm is provided by Lind and Rinke. The application is running on Rahti container orchestration service, provided by [CSC--IT Center for Science](https://csc.fi/en/).
+
+</div>

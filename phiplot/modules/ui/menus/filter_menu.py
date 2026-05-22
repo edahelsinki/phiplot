@@ -87,7 +87,7 @@ class FilterMenu(BaseMenu):
         self._widgets["apply_filter_button"] = pn.widgets.Button(
             name="Apply Filter", **self._styling.default_button_style
         )
-        self._widgets["apply_filter_button"].on_click(self._add_filter)
+        self._widgets["apply_filter_button"].on_click(self.add_filter)
 
         self._sync_filtering_types()
 
@@ -165,7 +165,7 @@ class FilterMenu(BaseMenu):
             logger.error("Unrecognized filter.")
 
 
-    def _add_filter(self, event=None) -> None:
+    def add_filter(self, event=None, filter_type=None, feature=None, filter_options=None) -> None:
         """
         Apply a new filter to the dataset.
 
@@ -175,9 +175,10 @@ class FilterMenu(BaseMenu):
 
         self._plot = self._parent_view.views["embedding"].plot
 
-        filter_type = self._widgets["filtering_type_selector"].value.lower().replace(" ", "_")
-        feature = self._widgets["filterby_feature_selector"].value
-        filter_options = [w.value for w in self.filterby_options]
+        if not all([filter_type, feature, filter_options]):
+            filter_type = self._widgets["filtering_type_selector"].value.lower().replace(" ", "_")
+            feature = self._widgets["filterby_feature_selector"].value
+            filter_options = [w.value for w in self.filterby_options]
 
         if not feature:
             pn.state.notifications.warning("No feature selected for the filter...")
