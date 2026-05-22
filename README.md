@@ -13,6 +13,10 @@ The source code has been published under the [MIT license](./LICENSE).
 ### Acknowledgments
 The interactive embedding feature of PhiPlot is motivated by the [InVis](https://link.springer.com/chapter/10.1007/978-3-642-40994-3_52) application by Paurat and Gärtner [4], and the [InVis 2.0](https://link.springer.com/chapter/10.1007/978-3-031-70371-3_34) application by Chen and Gärtner [5]. Our specific implementation is inspired by the InVis 2.0 application. The algorithmic principle behind the interactive embedding is based on [Knowledge-Based Kernel PCA](https://link.springer.com/chapter/10.1007/978-3-662-44851-9_32) introduced by Oglic, Paurat and Gärtner [6]. The [ATMOMACCS](https://arxiv.org/abs/2510.20465) fingerprinting algorithm is provided by Lind and Rinke [7]. The application is running on Rahti container orchestration service, provided by [CSC--IT Center for Science](https://csc.fi/en/).
 
+For more information and citation, please use:
+
+> Loukojärvi, M., Mahadevan, A., Haitsiukevich, K., & Puolamäki, K. (2026). PhiPlot: A Web-Based Interactive EDA Environment for Atmospherically Relevant Molecules (Version 1). arXiv. <https://doi.org/10.48550/ARXIV.2603.11751>
+
 ## Local testing with Docker
 
 We recommend using the deployed version, which requires no installation or configuration from the user, at: <https://phiplot-vilma-mongodb.2.rahtiapp.fi/>. However, if the site is unavailable, or you require a local testing environment, please use the following deployment steps.
@@ -76,4 +80,4 @@ docker compose --profile remote down
 
 [6] Oglic, D., Paurat, D., & Gärtner, T. (2014). *Interactive knowledge-based kernel PCA*. In T. Calders, F. Esposito, E. Hüllermeier, & R. Meo (Eds.), *Machine learning and knowledge discovery in databases* (pp. 501–516). Springer. https://doi.org/10.1007/978-3-662-44851-9_32  
 
-[7] Lind, L., Sandström, H., & Rinke, P. (2025). *An interpretable molecular descriptor for machine learning predictions in atmospheric science*. *arXiv preprint* arXiv:2510.20465. https://arxiv.org/abs/2510.20465
+[7] Lind, L., Sandström, H., & Rinke, P. (2026). *An interpretable molecular descriptor for machine learning predictions in atmospheric science*. *The Journal of Chemical Physics*, 164(8), Article 084115. https://doi.org/10.1063/5.0308548
